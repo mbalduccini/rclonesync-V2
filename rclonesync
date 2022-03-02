@@ -786,13 +786,6 @@ def googleapi_service(path):
             data['client_secret']=c[key]['client_secret']
 #            data['scopes']=["https://www.googleapis.com/auth/drive"]
             data['expiry']=tok['expiry']
-#            data={"token": "ya29.A0ARrdaM_Buyy2amsarzpMDHZo018p8c9cYectIooAP132aBsIy6Tm6CL8jNxoUnEm6eM-kb0Cpm0ckHQi1eNgF9Ft2zhYHvaIS1EqhqhReE-Bdncod4r8KKzGCF5voh77dQe5KZ0V5suvYl5-zxwcbkN7FCbV", 
-#              "refresh_token": "1//01-BJPltNOmqmCgYIARAAGAESNwF-L9IriJJZweL9d8uyrfjc1ED2cfYCVnscxO-lRrQuinJt5Sn5QA2eIfpDujOw4LLdKL7SdaU",
-#              "token_uri": "https://oauth2.googleapis.com/token", 
-#              "client_id": "922957434967-jap2dgmog4vjep9bp3vkjfvq4ab3nivg.apps.googleusercontent.com", 
-#              "client_secret": "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", 
-##              "scopes": ["https://www.googleapis.com/auth/drive"], 
-#              "expiry": "2022-02-27T14:46:38.168243009-05:00"}
 
             logging.debug("***"+str(data))
             SCOPES = ['https://www.googleapis.com/auth/drive']
@@ -1014,20 +1007,25 @@ def getPath(service, f):
     parent = f.get('parents')
     path = [{'id': f.get('id'), 'name': f.get('name')}]  # Result
     if parent:
-        while True:
-            folder = service.files().get(
-                fileId=parent[0], fields='id, name, parents').execute()
-            parent = folder.get('parents')
-            if parent is None:
-                break
-            path.append({'id': parent[0], 'name': folder.get('name')})
-
+        try:
+            while True:
+                folder = service.files().get(
+                    fileId=parent[0], fields='id, name, parents').execute()
+                parent = folder.get('parents')
+                if parent is None:
+                    break
+                path.append({'id': parent[0], 'name': folder.get('name')})
+        except Exception as error:
+            logging.error("getPath(): some kind of network error occurred")
+            logging.info("message:  <{}>".format(e))
+            return(None)
     path.reverse()
 #    print(path)
     return(path)
 
 def pathToStr(p):
 #    print(p)
+    if p==None: return(None)
     return("/".join([ d['name'] for d in list(p)]))
 
 
@@ -1109,6 +1107,8 @@ def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file
         i+=1
 
         file_path=pathToStr(getPath(service, file_record))
+        if file_path==None:
+            return 1, orig_token, False, None, None
 
         logging.debug("pathToStr() returned: "+file_path)
         if file_path=="" or not file_path.startswith(remote_root): # we should drop this
