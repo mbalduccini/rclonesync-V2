@@ -329,14 +329,6 @@ def bidirSync():
                 path1_found_same = True # Once we've found at least 1 unchanged file we know that not everything has changed, as with a DST time change
 
         logging.debug("looking for new files in Path1")
-        logging.debug("==============")
-        for key in path1_now:
-            if key.endswith("my ADDRESS.txt"):
-                logging.debug("present in path1_now: "+key)
-        for key in path1_prior:
-            if key.endswith("my ADDRESS.txt"):
-                logging.debug("present in path1_prior: "+key)
-        logging.debug("==============")
         for key in path1_now:
             if key not in path1_prior:
                 logging.info(print_msg("Path1", "  File is new", key))
