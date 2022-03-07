@@ -1036,37 +1036,42 @@ def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file
     if service==None:
         return 1, orig_token, False, None, None
 
-    changed=[]
-    page_token=token
-    while page_token is not None:
-        response = service.changes().list(pageToken=page_token,spaces='drive',includeRemoved=True,pageSize=1000,fields="nextPageToken,newStartPageToken,changes(fileId,removed,file(id,name,trashed,mimeType,parents))").execute()
-        for change in response.get('changes'):
-            # Process change
-            logging.debug('Change found for file: '+change.get('fileId')+'; removed='+str(change.get('removed')))
-            logging.debug('***'+str(change))
-            f=change.get('file')
-            if f!=None:
-                logging.debug("NAME="+f.get('name'))
-                logging.debug("TRASHED="+str(f.get('trashed')))
-                logging.debug("MIMETYPE="+f.get('mimeType'))
-
-                mime=f.get('mimeType')
-                if mime=="application/vnd.google-apps.folder":
-                    logging.debug("Folder detected. Ignoring")
-                elif mime.startswith("application/vnd.google-apps."):
-                    logging.debug("TODO: Google Apps file detected. Ignoring") # TODO
+    try:
+        changed=[]
+        page_token=token
+        while page_token is not None:
+            response = service.changes().list(pageToken=page_token,spaces='drive',includeRemoved=True,pageSize=1000,fields="nextPageToken,newStartPageToken,changes(fileId,removed,file(id,name,trashed,mimeType,parents))").execute()
+            for change in response.get('changes'):
+                # Process change
+                logging.debug('Change found for file: '+change.get('fileId')+'; removed='+str(change.get('removed')))
+                logging.debug('***'+str(change))
+                f=change.get('file')
+                if f!=None:
+                    logging.debug("NAME="+f.get('name'))
+                    logging.debug("TRASHED="+str(f.get('trashed')))
+                    logging.debug("MIMETYPE="+f.get('mimeType'))
+    
+                    mime=f.get('mimeType')
+                    if mime=="application/vnd.google-apps.folder":
+                        logging.debug("Folder detected. Ignoring")
+                    elif mime.startswith("application/vnd.google-apps."):
+                        logging.debug("TODO: Google Apps file detected. Ignoring") # TODO
+                    else:
+                        removed=f.get('trashed') or change.get('removed')
+                        changed.append([change.get('fileId'),f.get('name'),"remove" if removed else "modify", f ])
                 else:
-                    removed=f.get('trashed') or change.get('removed')
-                    changed.append([change.get('fileId'),f.get('name'),"remove" if removed else "modify", f ])
-            else:
-                logging.info("PROBLEM: file "+change.get('fileId')+" does not have file info. Probably it was removed. I should really have a database of fileIds and their former names, so I can delete it locally. Ignoring it for now") # TODO
-
-        if 'newStartPageToken' in response:
-            # Last page, save this token for the next polling interval
-            saved_start_page_token = response.get('newStartPageToken')
-            logging.info("newStartPageToken="+str(saved_start_page_token))
-        page_token = response.get('nextPageToken')
-        logging.info("nextPageToken="+str(page_token))
+                    logging.info("PROBLEM: file "+change.get('fileId')+" does not have file info. Probably it was removed. I should really have a database of fileIds and their former names, so I can delete it locally. Ignoring it for now") # TODO
+    
+            if 'newStartPageToken' in response:
+                # Last page, save this token for the next polling interval
+                saved_start_page_token = response.get('newStartPageToken')
+                logging.info("newStartPageToken="+str(saved_start_page_token))
+            page_token = response.get('nextPageToken')
+            logging.info("nextPageToken="+str(page_token))
+    except Exception as e:
+        logging.error("ERROR: merge_gdrive_changes_python() call to service.changes().list() failed")
+        logging.info("message:  <{}>".format(e))
+        return 1, orig_token, False, None, None
 
     token=saved_start_page_token
 
