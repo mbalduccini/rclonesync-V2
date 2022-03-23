@@ -1007,7 +1007,7 @@ def getPath(service, f):
                 if parent is None:
                     break
                 path.append({'id': parent[0], 'name': folder.get('name')})
-        except Exception as error:
+        except Exception as e:
             logging.error("getPath(): some kind of network error occurred")
             logging.info("message:  <{}>".format(e))
             return(None)
