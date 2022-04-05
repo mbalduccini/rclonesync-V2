@@ -1009,6 +1009,7 @@ def getPath(service, f):
                 path.append({'id': parent[0], 'name': folder.get('name')})
         except Exception as e:
             logging.error("getPath(): some kind of network error occurred")
+            logging.error("getPath(): the file info was: "+str(f))
             logging.info("message:  <{}>".format(e))
             return(None)
     path.reverse()
@@ -1105,6 +1106,9 @@ def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file
 
         file_path=pathToStr(getPath(service, file_record))
         if file_path==None:
+            if file_record.get('trashed'):
+                logging.debug("PROBLEM: file "+file_name+" was moved to trash and we cannot find its parent. Disregarding it for now rather than aborting. Probably, we'll have a file left behind in the local filesystem")
+                continue
             return 1, orig_token, False, None, None
 
         logging.debug("pathToStr() returned: "+file_path)
