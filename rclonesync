@@ -1044,7 +1044,7 @@ def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file
         changed=[]
         page_token=token
         while page_token is not None:
-            response = service.changes().list(pageToken=page_token,spaces='drive',includeRemoved=True,pageSize=1000,fields="nextPageToken,newStartPageToken,changes(fileId,removed,file(id,name,trashed,mimeType,parents))").execute()
+            response = service.changes().list(pageToken=page_token,spaces='drive',includeRemoved=True,pageSize=1000,fields="nextPageToken,newStartPageToken,changes(fileId,removed,file(id,name,trashed,mimeType,md5Checksum,parents))").execute()
             for change in response.get('changes'):
                 # Process change
                 logging.debug('Change found for file: '+change.get('fileId')+'; removed='+str(change.get('removed')))
@@ -1054,6 +1054,7 @@ def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file
                     logging.debug("NAME="+f.get('name'))
                     logging.debug("TRASHED="+str(f.get('trashed')))
                     logging.debug("MIMETYPE="+f.get('mimeType'))
+                    logging.debug("MD5="+f.get('md5Checksum'))
     
                     mime=f.get('mimeType')
                     if mime=="application/vnd.google-apps.folder":
