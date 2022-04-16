@@ -1054,7 +1054,7 @@ def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file
                     logging.debug("NAME="+f.get('name'))
                     logging.debug("TRASHED="+str(f.get('trashed')))
                     logging.debug("MIMETYPE="+f.get('mimeType'))
-                    logging.debug("MD5="+f.get('md5Checksum'))
+                    logging.debug("MD5="+str(f.get('md5Checksum')))
     
                     mime=f.get('mimeType')
                     if mime=="application/vnd.google-apps.folder":
