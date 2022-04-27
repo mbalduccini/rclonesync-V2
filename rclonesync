@@ -608,11 +608,12 @@ def bidirSync():
                     logging.error(print_msg("ERROR", f"Failed loading {path_text} list file <{lsl_file}>"))
                     return RTN_ABORT
             for key in files_copy_P2P1:
-                if key in path2_now and 'moved-from' in path2_now[key]:
-                    del path2_now[path2_now[key]['moved-from']]
-                    del path2_now[key]['moved-to']
-                logging.info("adding to Path1 cache file "+key+"; data="+str(path2_now[key]))
-                path1_now[key]=path2_now[key]
+                if key in path2_now:
+                    if 'moved-from' in path2_now[key]:
+                        del path2_now[path2_now[key]['moved-from']]
+                        del path2_now[key]['moved-to']
+                    logging.info("adding to Path1 cache file "+key+"; data="+str(path2_now[key]))
+                    path1_now[key]=path2_now[key]
             for key in files_delete_P1:
                 logging.info("deleting from Path1 cache file "+key)
                 if key in path1_now: del path1_now[key]
@@ -627,11 +628,12 @@ def bidirSync():
                     logging.error(print_msg("ERROR", f"Failed loading {path_text} list file <{lsl_file}>"))
                     return RTN_ABORT
             for key in files_copy_P1P2:
-                if key in path1_now and 'moved-from' in path1_now[key]:
-                    del path1_now[path1_now[key]['moved-from']]
-                    del path1_now[key]['moved-to']
-                logging.info("adding to Path2 cache file "+key+"; data="+str(path1_now[key]))
-                path2_now[key]=path1_now[key]
+                if key in path1_now:
+                    if 'moved-from' in path1_now[key]:
+                        del path1_now[path1_now[key]['moved-from']]
+                        del path1_now[key]['moved-to']
+                    logging.info("adding to Path2 cache file "+key+"; data="+str(path1_now[key]))
+                    path2_now[key]=path1_now[key]
             for key in files_delete_P2:
                 logging.info("deleting from Path2 cache file "+key)
                 if key in path2_now: del path2_now[key]
