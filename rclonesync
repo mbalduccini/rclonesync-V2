@@ -541,9 +541,14 @@ def bidirSync():
             files_copy_P2P1_filename = lsl_file_base + "_files_copy_P2P1"
             with io.open(files_copy_P2P1_filename, mode='wt', encoding='utf8') as outf:
                 for item in files_copy_P2P1:
-                    with io.open(path2_base+item, 'rb') as ifile:
-                        current_file_hash = hashlib.md5(ifile.read()).hexdigest() # bytes(hashlib.md5(ifile.read()).hexdigest(), encoding='utf-8')
-                    logging.info("===TEMP: Path2 file to be copied is: "+item+"; path2_base="+path2_base+"; MD5="+str(current_file_hash)) # [MB] WORK IN PROGRESS!!!
+                    try:
+                        with io.open(path2_base+item, 'rb') as ifile:
+                            current_file_hash = hashlib.md5(ifile.read()).hexdigest() # bytes(hashlib.md5(ifile.read()).hexdigest(), encoding='utf-8')
+                            logging.info("===TEMP: Path2 file to be copied is: "+item+"; path2_base="+path2_base+"; MD5="+str(current_file_hash)) # [MB] WORK IN PROGRESS!!!
+                    except Exception as error:
+                        # [MB] TODO -- the file no longer exists (moved before we got to it?)
+                        # Disregard for now, but later we'll need to do something about it
+                        logging.info("===FIXME: file "+path2_base+item+" no longer exists but we need to copy it to Path1!!") # [MB] WORK IN PROGRESS!!!
                     outf.write(item + "\n")
             logging.info(print_msg("Path2", "  Do queued copies to", "Path1"))
             if rclone_cmd('copy', path2_base, path1_base, files_file=files_copy_P2P1_filename, options=switches):
