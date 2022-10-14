@@ -623,7 +623,11 @@ def bidirSync():
                         path1_now[key]=path2_now[key]
                     else:
                         # refresh the timestamp of path2_now[item] for every item in files_copy_P2P1; put it back in path2_now[item]['orig_datetime']
-                        path1_now[key]=tempGetFileTimestamp(key,path1_base,user_filter_file)
+                        new_data=getFileTimestamp(key,path1_base,user_filter_file)
+                        if new_data!=None:
+                            path1_now[key]=new_data
+                        else:
+                            path1_now[key]=path2_now[key]
             for key in files_delete_P1:
                 logging.info("deleting from Path1 cache file "+key)
                 if key in path1_now: del path1_now[key]
@@ -1010,7 +1014,7 @@ def merge_gdrive_changes_gdrive(token, path, lsl_file_cached, ofile, filter_file
     
     return 0, token, changes_made, cached_data, new_data
 
-def tempGetFileTimestamp(pname,path,filter_file):
+def getFileTimestamp(pname,path,filter_file):
     global lsl_temp_filter
     # write to a temp file F1 the lines:
     # + pname
@@ -1027,14 +1031,13 @@ def tempGetFileTimestamp(pname,path,filter_file):
         logging.debug(":::::::::: something went wrong in rclone_lsl("+pname+")")
     status,e=load_list(tempfile)
     if status==1:
-        return("---INVALID---")
-    logging.debug("*****************")
-    logging.debug(e)
-    logging.debug("*****************")
+        return None
+#    logging.debug("*****************")
+#    logging.debug(e)
+#    logging.debug("*****************")
     if not pname in e.keys():
-        return("---INVALID---")
-#    new_data[file_path]=e[file_path]
-    return(e[pname])
+        return None
+    return e[pname]
 
 def getPath(service, f):
     parent = f.get('parents')
