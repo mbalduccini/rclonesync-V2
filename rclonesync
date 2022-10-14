@@ -64,6 +64,7 @@ RTN_CRITICAL = 2                                    # Aborts allow rerunning.  C
 gdrive="../gdrive/gdrive"
 path1_incremental=True
 skip_refresh=True # we should avoid the final refresh in case someone adds/removes a file between when we sync and when we refresh
+simple_timestamp_copy=False # True -> we use the timestamp of the source; False -> we use the timestamp at the destination after the copy
 
 def add_suffix_to_fname(fname,suffix):
     dotpos=fname.rfind(".")
@@ -618,7 +619,11 @@ def bidirSync():
                         del path2_now[path2_now[key]['moved-from']]
                         del path2_now[key]['moved-to']
                     logging.info("adding to Path1 cache file "+key+"; data="+str(path2_now[key]))
-                    path1_now[key]=path2_now[key]
+                    if simple_timestamp_copy:
+                        path1_now[key]=path2_now[key]
+                    else:
+                        # refresh the timestamp of path2_now[item] for every item in files_copy_P2P1; put it back in path2_now[item]['orig_datetime']
+                        path1_now[key]=tempGetFileTimestamp(key,path1_base,user_filter_file)
             for key in files_delete_P1:
                 logging.info("deleting from Path1 cache file "+key)
                 if key in path1_now: del path1_now[key]
@@ -639,6 +644,7 @@ def bidirSync():
                         del path1_now[key]['moved-to']
                     logging.info("adding to Path2 cache file "+key+"; data="+str(path1_now[key]))
                     path2_now[key]=path1_now[key]
+# TODO: refresh the timestamp of path1_now[key] for every item in files_copy_P1P2; put it back in path1_now[item]['orig_datetime']
             for key in files_delete_P2:
                 logging.info("deleting from Path2 cache file "+key)
                 if key in path2_now: del path2_now[key]
@@ -1004,6 +1010,31 @@ def merge_gdrive_changes_gdrive(token, path, lsl_file_cached, ofile, filter_file
     
     return 0, token, changes_made, cached_data, new_data
 
+def tempGetFileTimestamp(pname,path,filter_file):
+    global lsl_temp_filter
+    # write to a temp file F1 the lines:
+    # + pname
+    # - **
+
+    tf=open(lsl_temp_filter,"w")
+    tf.write("+ /"+pname+"**\n")
+    tf.write("- **\n")
+    tf.close()
+
+    tempfile=lsl_temp_filter+"_TEMP2"
+    # call rclone lsl with the cli path, but provide at the end of the cli --filter-from F1
+    if rclone_lsl(path,tempfile,filter_file,None,lsl_temp_filter) == 1:
+        logging.debug(":::::::::: something went wrong in rclone_lsl("+pname+")")
+    status,e=load_list(tempfile)
+    if status==1:
+        return("---INVALID---")
+    logging.debug("*****************")
+    logging.debug(e)
+    logging.debug("*****************")
+    if not pname in e.keys():
+        return("---INVALID---")
+#    new_data[file_path]=e[file_path]
+    return(e[pname])
 
 def getPath(service, f):
     parent = f.get('parents')
