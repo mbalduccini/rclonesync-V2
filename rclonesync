@@ -834,7 +834,8 @@ def googleapi_service(path):
 #                with open('token.json', 'w') as token:
 #                    token.write(creds.to_json())
 
-                aux_service[key] = build('drive', 'v3', credentials=creds)
+                # static_discovery=False required to run within app -- https://stackoverflow.com/questions/73275882/cannot-build-the-google-drive-api-service-in-an-app-bundled-with-pyinstaller
+                aux_service[key] = build('drive', 'v3', credentials=creds, static_discovery=False)
             #except HttpError as error:
             except Exception as error:
                 # TODO(developer) - Handle errors from drive API.
