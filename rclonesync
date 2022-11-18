@@ -1291,6 +1291,7 @@ def load_list(lslfile):
     try:
         line = "<none>"
         line_cnt = 0
+        pp=re.compile(r'(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})')
         with io.open(lslfile, mode='rt', encoding='utf8') as f:
             for line in f:
                 line_cnt += 1
@@ -1303,15 +1304,22 @@ def load_list(lslfile):
                     if DISREGARD_MICROSEC:
                         # Android MediaStore's DATE_MODIFIED only returns the epoch in seconds
                         microsec="0"
-                    # on Android, time.mktime gives error for the hour of the Spring time change, e.g. 03/10/2019 at 2am (any time during 2am)
-                    # That's because, tecnically, that hour does not exist. So, if we get an error, we try the next hour, e.g. 3am
-                    # If it still gives error, then we fail.
-                    #date_time = time.mktime(datetime.strptime(date + ' ' + _time, '%Y-%m-%d %H:%M:%S').timetuple()) + float('.'+ microsec)
-                    dt = datetime.strptime(date + ' ' + _time, '%Y-%m-%d %H:%M:%S')
-                    try:
-                        date_time = time.mktime(dt.timetuple()) + float('.'+ microsec)
-                    except OverflowError:
-                        date_time = time.mktime((dt+timedelta(hours=1)).timetuple()) + float('.'+ microsec)
+                    # Using strptime() is VERY SLOW if the Android app is not in the foreground
+                    # The following is a workaround
+                    # https://stackoverflow.com/questions/14163399/convert-list-of-datestrings-to-datetime-very-slow-with-python-strptime
+                    dt = datetime(*map(int, pp.match(date + ' ' + _time).groups()))
+                    # And mktime() is also VERY SLOW under the same conditions
+                    # timestamp() is faster and does not throw exceptions
+                    date_time = dt.timestamp() + float('.'+ microsec)
+#                    # on Android, time.mktime gives error for the hour of the Spring time change, e.g. 03/10/2019 at 2am (any time during 2am)
+#                    # That's because, tecnically, that hour does not exist. So, if we get an error, we try the next hour, e.g. 3am
+#                    # If it still gives error, then we fail.
+#                    #date_time = time.mktime(datetime.strptime(date + ' ' + _time, '%Y-%m-%d %H:%M:%S').timetuple()) + float('.'+ microsec)
+#                    dt = datetime.strptime(date + ' ' + _time, '%Y-%m-%d %H:%M:%S')
+#                    try:
+#                        date_time = time.mktime(dt.timetuple()) + float('.'+ microsec)
+#                    except OverflowError:
+#                        date_time = time.mktime((dt+timedelta(hours=1)).timetuple()) + float('.'+ microsec)
                     filename = out.group(5)
                     if filename in d:
                         logging.warning (f"WARNING  Duplicate line in LSL file:   <{line[:-1]}>")
@@ -1329,7 +1337,6 @@ def load_list(lslfile):
     except Exception as e:
         logging.error(f"Exception in load_list loading <{lslfile}>:\n  <{e}>\n  Line # {line_cnt}:  {line}")
         return 1, ""                                                # return False
-
 
 def get_and_load_lsl(path_text, lsl_file, path12=None):
     """
