@@ -65,7 +65,8 @@ gdrive="../gdrive/gdrive"
 path1_incremental=True
 skip_refresh=True # we should avoid the final refresh in case someone adds/removes a file between when we sync and when we refresh
 simple_timestamp_copy=False # True -> we use the timestamp of the source; False -> we use the timestamp at the destination after the copy
-DISREGARD_MICROSEC=True
+DISREGARD_MICROSEC=True # Android app does not give us the ms/us info
+DOUBLE_CHECK_PATH2=True
 
 def add_suffix_to_fname(fname,suffix):
     dotpos=fname.rfind(".")
@@ -355,6 +356,7 @@ def bidirSync():
     logging.info(">>>>> Path2 Checking for Diffs")
 
     path2_lsl_file_new = path2_lsl_file + '_NEW'
+    using_override=override_filename_exists(path2_lsl_file_new)
     status, path2_now = get_and_load_lsl("current Path2", path2_lsl_file_new, path2_base)
     if status:  return status
 
@@ -371,16 +373,26 @@ def bidirSync():
     for key in path2_prior:
         _newer=False; _older=False; _size=False; _deleted=False
         if key not in path2_now:
-            logging.info(print_msg("Path2", "  File was deleted", key))
-            logging.debug(key)
-            path2_deleted += 1
-            _deleted = True
+            if using_override and DOUBLE_CHECK_PATH2 and not checkFileExists(key,path2_base,user_filter_file):
+                logging.info(print_msg("Path2", "  File was deleted", key))
+                logging.debug(key)
+                path2_deleted += 1
+                _deleted = True
         else:
             if path2_prior[key]['datetime'] != path2_now[key]['datetime']:
+                if using_override and DOUBLE_CHECK_PATH2:
+                    # if we are double-checking, we get the timestamp if the physical file
+                    # and we use that instead of what we received from the calling app
+                    new_data=getFileTimestamp(key,path2_base,user_filter_file)
+                    if new_data!=None:
+                        path2_now[key]
                 if path2_prior[key]['datetime'] < path2_now[key]['datetime']:
                     logging.info(print_msg("Path2", "  File is newer",key+" "+str(path2_prior[key]['datetime'])+" "+str(path2_now[key]['datetime'])))
                     _newer = True
-                else:               # Current Path2 version is older than prior sync.
+                elif path2_prior[key]['datetime'] != path2_now[key]['datetime']:
+                    # We use elif instead of else in case we are double-checking and the timestamp
+                    # of the physical file happens to be identical to that in path2_prior
+                    # Current Path2 version is older than prior sync.
                     logging.info(print_msg("Path2", "  File is OLDER", key))
                     _older = True
 
@@ -1031,6 +1043,29 @@ def merge_gdrive_changes_gdrive(token, path, lsl_file_cached, ofile, filter_file
     
     return 0, token, changes_made, cached_data, new_data
 
+def checkFileExists(pname,path,filter_file):
+    global lsl_temp_filter
+    # write to a temp file F1 the lines:
+    # + pname
+    # - **
+
+    tf=open(lsl_temp_filter,"w")
+    tf.write("+ /"+pname+"**\n")
+    tf.write("- **\n")
+    tf.close()
+
+    tempfile=lsl_temp_filter+"_TEMP2"
+    # call rclone lsl with the cli path, but provide at the end of the cli --filter-from F1
+    if rclone_lsl(path,tempfile,filter_file,None,lsl_temp_filter) == 1:
+        logging.debug(":::::::::: something went wrong in rclone_lsl("+pname+")")
+    status,e=load_list(tempfile)
+    if status==1:
+        return False
+#    logging.debug("*****************")
+#    logging.debug(e)
+#    logging.debug("*****************")
+    return(pname in e.keys())
+
 def getFileTimestamp(pname,path,filter_file):
     global lsl_temp_filter
     # write to a temp file F1 the lines:
@@ -1338,6 +1373,12 @@ def load_list(lslfile):
         logging.error(f"Exception in load_list loading <{lslfile}>:\n  <{e}>\n  Line # {line_cnt}:  {line}")
         return 1, ""                                                # return False
 
+def override_filename(lsl_file):
+    return(lsl_file+"_OVERRIDE")
+
+def override_filename_exists(lsl_file):
+    return(os.path.exists(override_filename(lsl_file)))
+
 def get_and_load_lsl(path_text, lsl_file, path12=None):
     """
     Optionally call for an rclone lsl of the referenced path12, written to the lsl_file.
@@ -1348,8 +1389,8 @@ def get_and_load_lsl(path_text, lsl_file, path12=None):
     path12 is a string to be passed to the rclone lsl, eg "Dropbox:"
     """
     if path12 is not None:
-        if os.path.exists(lsl_file+"_OVERRIDE"):
-            shutil.move(lsl_file+"_OVERRIDE",lsl_file)
+        if override_filename_exists(lsl_file):
+            shutil.move(override_filename(lsl_file),lsl_file)
         elif rclone_lsl(path12, lsl_file, filter_file=user_filter_file):
             return RTN_ABORT, None
     status, loaded_list = load_list(lsl_file)
