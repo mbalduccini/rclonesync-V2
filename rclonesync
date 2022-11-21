@@ -367,25 +367,33 @@ def bidirSync():
     if status:  return status
     path2_prior_count = len(path2_prior)    # Save for later max deletes check
 
+    path2_lsl_file_new_BAD=False
     path2_deltas = {}
     path2_deleted = 0
     path2_found_same = False
     for key in path2_prior:
         _newer=False; _older=False; _size=False; _deleted=False
         if key not in path2_now:
-            if using_override and DOUBLE_CHECK_PATH2 and not checkFileExists(key,path2_base,user_filter_file):
-                logging.info(print_msg("Path2", "  File was deleted", key))
-                logging.debug(key)
-                path2_deleted += 1
-                _deleted = True
+            if using_override and DOUBLE_CHECK_PATH2:
+                new_data=getFileInfo(key,path2_base,user_filter_file)
+                if new_data!=None:
+                    logging.info(print_msg("Path2", "  File was NOT REALLY deleted, it's still in Path2. Ignoring", key))
+                    path2_now[key]=new_data
+                    path2_lsl_file_new_BAD=True
+                else:
+                    logging.info(print_msg("Path2", "  File was deleted", key))
+                    logging.debug(key)
+                    path2_deleted += 1
+                    _deleted = True
         else:
             if path2_prior[key]['datetime'] != path2_now[key]['datetime']:
                 if using_override and DOUBLE_CHECK_PATH2:
                     # if we are double-checking, we get the timestamp if the physical file
                     # and we use that instead of what we received from the calling app
-                    new_data=getFileTimestamp(key,path2_base,user_filter_file)
-                    if new_data!=None:
-                        path2_now[key]
+                    new_data=getFileInfo(key,path2_base,user_filter_file)
+                    if new_data!=None and path2_now[key]['datetime']!=new_data['datetime']:
+                        path2_now[key]=new_data
+                        path2_lsl_file_new_BAD=True
                 if path2_prior[key]['datetime'] < path2_now[key]['datetime']:
                     logging.info(print_msg("Path2", "  File is newer",key+" "+str(path2_prior[key]['datetime'])+" "+str(path2_now[key]['datetime'])))
                     _newer = True
@@ -570,7 +578,7 @@ def bidirSync():
             if not simple_timestamp_copy:
                 for key in files_copy_P2P1:
                     path2_now_updated[key]=path2_now[key]
-                    new_data=getFileTimestamp(key,path2_base,user_filter_file)
+                    new_data=getFileInfo(key,path2_base,user_filter_file)
                     if new_data!=None:
                         path2_now_updated[key]=new_data
             logging.info(print_msg("Path2", "  Do queued copies to", "Path1"))
@@ -580,7 +588,7 @@ def bidirSync():
             if not simple_timestamp_copy:
                 for key in files_copy_P2P1:
                     path1_now_updated[key]=path2_now_updated[key]
-                    new_data=getFileTimestamp(key,path1_base,user_filter_file)
+                    new_data=getFileInfo(key,path1_base,user_filter_file)
                     if new_data!=None:
                         path1_now_updated[key]=new_data
             if not args.no_cleanup:
@@ -662,7 +670,18 @@ def bidirSync():
             order_and_write_lsl(path1_now,path1_lsl_file)
 
         if len(files_copy_P1P2)==0 and len(files_delete_P2)==0:
-            shutil.copy2(path2_lsl_file_new, path2_lsl_file)
+            if path2_lsl_file_new_BAD:
+                # We found that the content of path2_lsl_file_new is not good.
+                # It means that we received it from the calling app and that
+                # we determined that some of its entries are outdated w.r.t.
+                # the physical files.
+                # In that case, we have already corrected path2_now
+                # and we must save it to disk instead of
+                # relying on path2_lsl_file_new, which has not been
+                # corrected.
+                order_and_write_lsl(path2_now,path2_lsl_file)
+            else:
+                shutil.copy2(path2_lsl_file_new, path2_lsl_file)
         else:
             if path1_now == None:
                 status, path1_now = load_list(path1_lsl_file)
@@ -1007,16 +1026,21 @@ def merge_gdrive_changes_gdrive(token, path, lsl_file_cached, ofile, filter_file
             # - **
 
             tf=open(lsl_temp_filter,"w")
-            tf.write("+ /"+dir_path+("/" if dir_path!="" else "")+"**\n")
+            # old, less efficient approach
+            #tf.write("+ /"+dir_path+("/" if dir_path!="" else "")+"**\n")
+            #tf.write("- **\n")
+            tf.write("+ /"+file_path+"\n")
             tf.write("- **\n")
             tf.close()
 
-            # max_depth together with the filter allow us to look at exactly max_depth
-            max_depth=file_path.count("/")+1
+            # old, less efficient approach
+#            # max_depth together with the filter allow us to look at exactly max_depth
+#            max_depth=file_path.count("/")+1
 
             # call rclone lsl with the cli path, but provide at the end of the cli --filter-from F1
-#            if rclone_lsl(path,tempfile,filter_file,options,path.rstrip("/")+"/"+file_path) == 1:
-            if rclone_lsl(path,tempfile,filter_file,options,lsl_temp_filter,max_depth) == 1:
+            # old, less efficient approach
+#            if rclone_lsl(path,tempfile,filter_file,options,lsl_temp_filter,max_depth) == 1:
+            if rclone_lsl(path,tempfile,filter_file,options,lsl_temp_filter) == 1:
                 return 1, orig_token, True, None, None
             status,e=load_list(tempfile)
             if status==1:
@@ -1043,37 +1067,17 @@ def merge_gdrive_changes_gdrive(token, path, lsl_file_cached, ofile, filter_file
     
     return 0, token, changes_made, cached_data, new_data
 
-def checkFileExists(pname,path,filter_file):
+def getFileInfo(pname,path,filter_file):
     global lsl_temp_filter
     # write to a temp file F1 the lines:
     # + pname
     # - **
 
     tf=open(lsl_temp_filter,"w")
-    tf.write("+ /"+pname+"**\n")
-    tf.write("- **\n")
-    tf.close()
-
-    tempfile=lsl_temp_filter+"_TEMP2"
-    # call rclone lsl with the cli path, but provide at the end of the cli --filter-from F1
-    if rclone_lsl(path,tempfile,filter_file,None,lsl_temp_filter) == 1:
-        logging.debug(":::::::::: something went wrong in rclone_lsl("+pname+")")
-    status,e=load_list(tempfile)
-    if status==1:
-        return False
-#    logging.debug("*****************")
-#    logging.debug(e)
-#    logging.debug("*****************")
-    return(pname in e.keys())
-
-def getFileTimestamp(pname,path,filter_file):
-    global lsl_temp_filter
-    # write to a temp file F1 the lines:
-    # + pname
-    # - **
-
-    tf=open(lsl_temp_filter,"w")
-    tf.write("+ /"+pname+"**\n")
+    # old, less efficient approach
+#    tf.write("+ /"+pname+"**\n")
+#    tf.write("- **\n")
+    tf.write("+ /"+pname+"\n")
     tf.write("- **\n")
     tf.close()
 
@@ -1229,16 +1233,23 @@ def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file
             # - **
 
             tf=open(lsl_temp_filter,"w")
-            tf.write("+ /"+dir_path+("/" if dir_path!="" else "")+"**\n")
+            # old, less efficient approach
+#            #tf.write("+ /"+dir_path+("/" if dir_path!="" else "")+"**\n")
+#            #tf.write("- **\n")
+#            tf.write("+ /"+dir_path+("/" if dir_path!="" else "")+"**\n")
+#            tf.write("- **\n")
+            tf.write("+ "+file_path+"\n")
             tf.write("- **\n")
             tf.close()
 
-            # max_depth together with the filter allow us to look at exactly max_depth
-            max_depth=file_path.count("/")+1
+            # old, less efficient approach
+#            # max_depth together with the filter allow us to look at exactly max_depth
+#            max_depth=file_path.count("/")+1
 
             # call rclone lsl with the cli path, but provide at the end of the cli --filter-from F1
-#            if rclone_lsl(path,ofile,filter_file,options,path.rstrip("/")+"/"+file_path) == 1:
-            if rclone_lsl(path,ofile,filter_file,options,lsl_temp_filter,max_depth) == 1:
+            # old, less efficient approach
+#            if rclone_lsl(path,ofile,filter_file,options,lsl_temp_filter,max_depth) == 1:
+            if rclone_lsl(path,ofile,filter_file,options,lsl_temp_filter) == 1:
                 return 1, orig_token, False, None, None
             status,e=load_list(ofile)
             if status==1:
