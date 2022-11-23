@@ -116,7 +116,17 @@ def bidirSync():
         if check_sync():
             return RTN_CRITICAL
         return 0
-    
+
+    if args.path1_changes_only:
+        logging.info(f"Only checking if path1 has changes")
+        token_fp=open(path1_lsl_token,"rt")
+        change_token=token_fp.readline().rstrip()
+        token_fp.close()
+        new_change_token=gdrive_changes_now(path1_base)
+        logging.info(f"Stored token: "+str(change_token)+"; new token: "+str(new_change_token)+"; changed="+str(new_change_token!=change_token))
+        if new_change_token!=change_token:
+            logging.info(f"CHANGES DETECTED")
+        return 0
 
     logging.info(f"Synching Path1  <{path1_base}>  with Path2  <{path2_base}>")
 
@@ -1536,6 +1546,8 @@ if __name__ == '__main__':
                         help="Disable date-time from log output - useful for testing.")
     parser.add_argument('--no-cleanup', action='store_true',
                         help="Retain working files - useful for debug and testing.")
+    parser.add_argument('--path1-changes-only', action='store_true',
+                        help="Only check for changes in path1 and return.")
     parser.add_argument('-V', '--version', action='version', version='%(prog)s ' + __version__,
                         help="Return rclonesync's version number and exit.")
     args = parser.parse_args()
