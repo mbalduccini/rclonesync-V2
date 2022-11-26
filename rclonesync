@@ -384,21 +384,23 @@ def bidirSync():
     for key in path2_prior:
         _newer=False; _older=False; _size=False; _deleted=False
         if key not in path2_now:
+            skip_key=False
             if using_override and DOUBLE_CHECK_PATH2:
                 new_data=getFileInfo(key,path2_base,user_filter_file)
                 if new_data!=None:
                     logging.info(print_msg("Path2", "  File was NOT REALLY deleted, it's still in Path2. Ignoring", key))
                     path2_now[key]=new_data
                     path2_lsl_file_new_BAD=True
-                else:
-                    logging.info(print_msg("Path2", "  File was deleted", key))
-                    logging.debug(key)
-                    path2_deleted += 1
-                    _deleted = True
+                    skip_key=True
+            if not skip_key:
+                logging.info(print_msg("Path2", "  File was deleted", key))
+                logging.debug(key)
+                path2_deleted += 1
+                _deleted = True
         else:
             if path2_prior[key]['datetime'] != path2_now[key]['datetime']:
                 if using_override and DOUBLE_CHECK_PATH2:
-                    # if we are double-checking, we get the timestamp if the physical file
+                    # if we are double-checking, we get the timestamp of the physical file
                     # and we use that instead of what we received from the calling app
                     new_data=getFileInfo(key,path2_base,user_filter_file)
                     if new_data!=None and path2_now[key]['datetime']!=new_data['datetime']:
@@ -419,10 +421,22 @@ def bidirSync():
         else:
             path2_found_same = True # Once we've found at least 1 unchanged file we know that not everything has changed, as with a DST time change
 
+    bad_keys=[]
     for key in path2_now:
         if key not in path2_prior:
-            logging.info(print_msg("Path2", "  File is new", key))
-            path2_deltas[key] = {'new':True, 'newer':False, 'older':False, 'size':False, 'deleted':False}
+            skip_key=False
+            if using_override and DOUBLE_CHECK_PATH2:
+                new_data=getFileInfo(key,path2_base,user_filter_file)
+                if new_data==None:
+                    logging.info(print_msg("Path2", "  File does not really exist. Ignoring", key))
+                    bad_keys.append(key)
+                    path2_lsl_file_new_BAD=True
+                    skip_key=True
+            if not skip_key:
+                logging.info(print_msg("Path2", "  File is new", key))
+                path2_deltas[key] = {'new':True, 'newer':False, 'older':False, 'size':False, 'deleted':False}
+    for key in bad_keys:
+        del path2_now[key]
 
     path2_prior = None              # Free up the memory
 #    path2_now = None
@@ -1703,9 +1717,9 @@ if __name__ == '__main__':
     lock_file = os.path.join(tempfile.gettempdir(), 'rclonesync_LOCK_' + (
         path1_base + path2_base).replace(':','_').replace(r'/','_').replace('\\','_'))
 
-    if request_lock(sys.argv, lock_file) == 0:
+    if args.path1_changes_only or request_lock(sys.argv, lock_file) == 0:
         status = bidirSync()
-        release_lock(lock_file)
+        if not args.path1_changes_only: release_lock(lock_file)
         if status == RTN_CRITICAL:
             logging.error("***** Critical Error Abort - Must run --first-sync to recover.  See README.md *****\n")
             if os.path.exists(path2_lsl_file):
