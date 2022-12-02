@@ -1073,14 +1073,14 @@ def merge_gdrive_changes_gdrive(token, path, lsl_file_cached, ofile, filter_file
             tf.write("- **\n")
             tf.close()
 
-            # old, less efficient approach
-#            # max_depth together with the filter allow us to look at exactly max_depth
-#            max_depth=file_path.count("/")+1
+            # old, less efficient approach <<< actually useful to prune the search
+            # max_depth together with the filter allow us to look at exactly max_depth
+            max_depth=file_path.count("/")+1
 
             # call rclone lsl with the cli path, but provide at the end of the cli --filter-from F1
-            # old, less efficient approach
-#            if rclone_lsl(path,tempfile,filter_file,options,lsl_temp_filter,max_depth) == 1:
-            if rclone_lsl(path,tempfile,filter_file,options,lsl_temp_filter) == 1:
+            # old, less efficient approach  <<< actually useful to prune the search
+            if rclone_lsl(path,tempfile,filter_file,options,lsl_temp_filter,max_depth) == 1:
+#            if rclone_lsl(path,tempfile,filter_file,options,lsl_temp_filter) == 1:
                 return 1, orig_token, True, None, None
             status,e=load_list(tempfile)
             if status==1:
@@ -1282,14 +1282,14 @@ def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file
             tf.write("- **\n")
             tf.close()
 
-            # old, less efficient approach
-#            # max_depth together with the filter allow us to look at exactly max_depth
-#            max_depth=file_path.count("/")+1
+            # old, less efficient approach <<< actually useful to prune the search
+            # max_depth together with the filter allow us to look at exactly max_depth
+            max_depth=file_path.count("/")+1
 
             # call rclone lsl with the cli path, but provide at the end of the cli --filter-from F1
-            # old, less efficient approach
-#            if rclone_lsl(path,ofile,filter_file,options,lsl_temp_filter,max_depth) == 1:
-            if rclone_lsl(path,ofile,filter_file,options,lsl_temp_filter) == 1:
+            # old, less efficient approach <<< actually useful to prune the search
+            if rclone_lsl(path,ofile,filter_file,options,lsl_temp_filter,max_depth) == 1:
+#            if rclone_lsl(path,ofile,filter_file,options,lsl_temp_filter) == 1:
                 return 1, orig_token, False, None, None
             status,e=load_list(ofile)
             if status==1:
