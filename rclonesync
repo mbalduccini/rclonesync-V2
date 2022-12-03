@@ -242,7 +242,15 @@ def bidirSync():
         if rclone_cmd('sync', path1_base, path2_base, filter_file=user_filter_file, options=switches + ['--min-size', '0']):
             return RTN_CRITICAL
 
-        if skip_refresh:
+        if 1==0 and skip_refresh:
+            # skip_refresh currently disabled
+            # Copying over _NEW is WRONG. Suppose Path2 is initially empty and we copy over many files from Path1.
+            # Copying over _NEW of Path2 will cause the final lsl file to be empty, instead of listing all the
+            # files that have been copied to Path2!
+            # One option is to leverage the same code that is used in the (not first_sync) branch,
+            # however that won't work if some files have been skipped due to errors.
+            # Given that first-sync may entail large and long transfers, such errors are possible,
+            # and so I think it's much safer to just do a full refresh.
             logging.info(">>>>> --first-sync skipping refreshing lsl files")
             shutil.copy2(path1_lsl_file_new, path1_lsl_file)
             shutil.copy2(path2_lsl_file_new, path2_lsl_file)
