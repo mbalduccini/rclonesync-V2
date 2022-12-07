@@ -76,17 +76,39 @@ def add_suffix_to_fname(fname,suffix):
         new_fname=fname + suffix
     return(new_fname)
 
+def get_crypt_remote(path):
+    key=path.split(":")[0]
+    creds = None
+    # The file token.json stores the user's access and refresh tokens, and is
+    # created automatically when the authorization flow completes for the first
+    # time.
+    if not os.path.exists(rcconfig):
+        logging.error("PROBLEM: get_crypt_remote() cannot find rclone config file "+rcconfig)
+        return(None)
+    #creds = Credentials.from_authorized_user_file('token.json', SCOPES)
+
+    c=configparser.ConfigParser()
+    with open(rcconfig,'r') as fp:
+        c.read_file(fp)
+        if c[key]['type']!='crypt':
+            loging.error("ERROR: path "+path+" MUST be a Crypt. Type found in rclone is "+c[key]['type'])
+            return("")
+        else:
+            return(c[key]['remote'])
+
 def bidirSync():
 
     global path1_lsl_file, path2_lsl_file
     global path1_lsl_token # TODO
     global lsl_temp_filter
+    global lsl_temp_crypt
     lsl_file_base  = workdir + "LSL_" + (path1_base + path2_base).replace(':','_').replace(r'/','_').replace('\\','_')
             # eg:  '/home/<user>/.rclonesyncwd/LSL_<path1_base><path2_base>'
     path1_lsl_file = lsl_file_base + '_Path1'
     path1_lsl_token = lsl_file_base + '_Path1_token'
     path2_lsl_file = lsl_file_base + '_Path2'
     lsl_temp_filter = lsl_file_base + '_temp_filter'
+    lsl_temp_crypt = lsl_file_base + '_temp_crypt'
 
     
     # ***** Check Sync Only *****
@@ -875,15 +897,17 @@ def googleapi_service(path):
         # time.
         if not os.path.exists(rcconfig):
             logging.error("PROBLEM: googleapi_service() cannot find rclone config file "+rcconfig)
-            return(None)
+            return((None,None))
         #creds = Credentials.from_authorized_user_file('token.json', SCOPES)
 
         c=configparser.ConfigParser()
         with open(rcconfig,'r') as fp:
             c.read_file(fp)
-            if c[key]['type']!='drive':
+            if c[key]['type']=='crypt':
+                return(googleapi_service(c[key]['remote']))
+            elif c[key]['type']!='drive':
                 loging.error("ERROR: path "+path+" MUST be a Google Drive. Type found in rclone is "+c[key]['type'])
-                return(None)
+                return((None,None))
             tok=json.loads(c[key]['token'])
             data={}
             data['token']=tok['access_token']
@@ -904,7 +928,7 @@ def googleapi_service(path):
                         creds.refresh(Request())
                     else:
                         logging.error("PROBLEM: googleapi_service() cannot create credentials with the info in "+rcconfig)
-                        return(None)
+                        return((None,None))
 #                   else:
 #                       flow = InstalledAppFlow.from_client_secrets_file(
 #                           'credentials.json', SCOPES)
@@ -921,13 +945,13 @@ def googleapi_service(path):
                 # TODO(developer) - Handle errors from drive API.
                 logging.error(f'googleapi_service(): An error occurred: {error}')
                 logging.error(f'googleapi_service(): likely unable to connect to the authentication server. Is your device connected to the internet?')
-                return(None)
+                return((None,None))
 
-    return(aux_service[key])
+    return((aux_service[key],path))
 
 
 def gdrive_changes_now_python(path):
-    service=googleapi_service(path)
+    (service,path_raw)=googleapi_service(path)
     if service==None:
         return("")
 
@@ -1181,9 +1205,10 @@ def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file
     orig_token=token
     linenum = inspect.getframeinfo(inspect.stack()[1][0]).lineno
 
-    service=googleapi_service(path)
+    (service,path_raw)=googleapi_service(path)
     if service==None:
         return 1, orig_token, False, None, None
+    remote_type_crypt=True if path!=path_raw else False
 
     try:
         changed=[]
@@ -1235,7 +1260,7 @@ def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file
     if status != 0:
         return 1, orig_token, False, None, None
 
-    remote_root=path.split(":",1)[1]
+    remote_root=path_raw.split(":",1)[1]
     if not remote_root.endswith("/"):
         remote_root=remote_root+"/"
     if remote_root=="/":
@@ -1265,6 +1290,23 @@ def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file
             continue
 
         file_path=file_path[len(remote_root):] # remove the remote root prefix
+        if remote_type_crypt:
+            path_remote=path.split(":",1)[0]+":"
+            logging.debug("Converting "+file_path+" to decrypted name")
+            global lsl_temp_crypt
+            res=rclone_cmd_read_output("cryptdecode", lsl_temp_crypt, path_remote, file_path)
+            if res==1:
+                continue
+            # TODO cryptdecode separator. Change if rclone changes
+            sep=" \t "
+            crypt_fp=open(lsl_temp_crypt,"rt")
+            l=crypt_fp.readline().rstrip()
+            p=l.index(sep)
+            if p==-1:
+                continue
+            file_path=l[p+len(sep):]
+            crypt_fp.close()
+            logging.debug("Decrypted path is "+file_path)
         logging.debug("Change entry to merge: "+file_path)
 
         if file_action=="remove":
@@ -1358,6 +1400,42 @@ def rclone_cmd(cmd, p1=None, p2=None, filter_file=None, files_file=None, options
             p.wait()
             if p.returncode == 0:
                 return 0
+        except Exception as e:
+            logging.info(print_msg("WARNING", "rclone {} try {} failed.".format(cmd, x+1), p1))
+            logging.info("message:  <{}>".format(e))
+    logging.error(print_msg("ERROR", "rclone {} failed.  (Line {})".format(cmd, linenum), p1))
+    return 1
+
+def rclone_cmd_read_output(cmd, ofile, p1=None, p2=None, filter_file=None, files_file=None, options=None):
+    """
+    Execute an rclone command and save the output to ofile.
+    p1 and p2 are optional.
+    filter_file is a string full path to a file which will be passed to rclone --filter-from.
+    files_file is a string full path to a list of files for the rclone command operation, such as copy these files.
+    options is a list of switches passed to rclone
+        EG: ["--filter-from", "some_file", "--dry-run", "-vv", '--log-format', '""']
+    """
+    linenum = inspect.getframeinfo(inspect.stack()[1][0]).lineno
+    process_args = [rclone, cmd, "--config", rcconfig]
+    if p1 is not None:
+        process_args.append(p1)
+    if p2 is not None:
+        process_args.append(p2)
+    if filter_file is not None:
+        process_args.extend(["--filter-from", filter_file])
+    if files_file is not None:
+        process_args.extend(["--files-from-raw", files_file])
+    if options is not None:
+        process_args.extend(options)
+    if args.rclone_args is not None:
+        process_args.extend(args.rclone_args)
+    logging.debug("    rclone command:  {}".format(process_args))
+    for x in range(MAXTRIES):
+        try:
+            with io.open(ofile, "wt", encoding='utf8') as of:
+                if not subprocess.call(process_args, stdout=of):
+                    return 0
+                logging.info(print_msg("WARNING", "rclone {} try {} failed.".format(cmd, x+1),p1))
         except Exception as e:
             logging.info(print_msg("WARNING", "rclone {} try {} failed.".format(cmd, x+1), p1))
             logging.info("message:  <{}>".format(e))
