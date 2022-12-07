@@ -67,6 +67,7 @@ skip_refresh=True # we should avoid the final refresh in case someone adds/remov
 simple_timestamp_copy=False # True -> we use the timestamp of the source; False -> we use the timestamp at the destination after the copy
 DISREGARD_MICROSEC=True # Android app does not give us the ms/us info
 DOUBLE_CHECK_PATH2=True
+COMBINED_LSL=True # True to attempt and speed up merge_gdrive_changes_python() when there are many files
 
 def add_suffix_to_fname(fname,suffix):
     dotpos=fname.rfind(".")
@@ -835,6 +836,7 @@ def print_msg(tag, msg, key=''):
 
 
 # ***** rclone call wrapper functions with retries *****
+# If passing --files-from, add to options variable
 MAXTRIES=3
 def rclone_lsl(path, ofile, filter_file=None, options=None, extra_filter_file=None, max_depth=-1):
     """
@@ -1152,10 +1154,14 @@ def getFileInfo(pname,path,filter_file):
     tf.write("+ /"+pname+"\n")
     tf.write("- **\n")
     tf.close()
+    max_depth=pname.count("/")+1
 
     tempfile=lsl_temp_filter+"_TEMP2"
-    # call rclone lsl with the cli path, but provide at the end of the cli --filter-from F1
-    if rclone_lsl(path,tempfile,filter_file,None,lsl_temp_filter) == 1:
+    ## call rclone lsl with the cli path, but provide at the end of the cli --filter-from F1
+    if rclone_lsl(path,tempfile,filter_file,None,lsl_temp_filter,max_depth) == 1:
+    # Attempt at improving on speed of the above
+    # Failed because it's important to use the filter_file and it's incompatible with explicit path
+    #if rclone_lsl(path+pname,tempfile) == 1: # TODO see if we need max_depth=1
         logging.debug(":::::::::: something went wrong in rclone_lsl("+pname+")")
     status,e=load_list(tempfile)
     if status==1:
@@ -1201,6 +1207,8 @@ def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file
     options is a list of switches passed to rclone (not currently used)
     """
     global lsl_temp_filter
+
+    added_files={}
 
     orig_token=token
     linenum = inspect.getframeinfo(inspect.stack()[1][0]).lineno
@@ -1314,13 +1322,17 @@ def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file
                 del new_data[file_path]
                 changes_made=True
                 logging.debug("file deleted: "+file_path)
-        else:
-
-            # drop the filename from P1. Call the resulting path P2
-            dir_path=os.path.dirname(file_path)
-            # write to a temp file F1 the lines:
-            # + /....P2/**
-            # - **
+#        else:
+        elif COMBINED_LSL:
+            d=file_path.count("/")+1
+            added_files.setdefault(d,[])
+            added_files[d].append(file_path)
+        else: # not COMBINED_LSL
+            ## drop the filename from P1. Call the resulting path P2
+            #dir_path=os.path.dirname(file_path)
+            ## write to a temp file F1 the lines:
+            ## + /....P2/**
+            ## - **
 
             tf=open(lsl_temp_filter,"w")
             # old, less efficient approach
@@ -1358,6 +1370,36 @@ def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file
             logging.debug("***"+str(e[file_path]))
             new_data[file_path]=e[file_path]
             changes_made=True
+
+    if COMBINED_LSL:
+        for d in added_files.keys():
+            tf=open(lsl_temp_filter,"w")
+            for file_path in added_files[d]:
+                tf.write("+ "+file_path+"\n")
+            tf.write("- **\n")
+            tf.close()
+
+            #if rclone_lsl(path,ofile,filter_file,options2+["--files-from",lsl_temp_filter]) == 1: # TODO see if I need max_depth=1
+            if rclone_lsl(path,ofile,filter_file,options,lsl_temp_filter,d) == 1:
+                return 1, orig_token, False, None, None
+            status,e=load_list(ofile)
+            if status==1:
+                return 1, orig_token, False, None, None
+            logging.debug("*****************")
+            logging.debug(e)
+            logging.debug("*****************")
+
+            # in the output, look for P1
+            # if not found, then it means that the file is filtered out
+            for file_path in added_files[d]:
+                logging.debug("file modified: "+file_path)
+                if not file_path in e.keys():
+                    logging.debug("actually, file was filtered out: "+file_path)
+                    # a filter must have dropped the file
+                    continue
+                logging.debug("***"+str(e[file_path]))
+                new_data[file_path]=e[file_path]
+                changes_made=True
 
     if changes_made:
         logging.debug("writing changes to "+ofile+"; contains data for "+file_path+": "+("yes" if file_path in new_data else "no"))
