@@ -408,6 +408,20 @@ def bidirSync():
     if status:  return status
     path2_prior_count = len(path2_prior)    # Save for later max deletes check
 
+    if using_override and DOUBLE_CHECK_PATH2:
+        key_batch=[]
+        for key in path2_prior:
+            if key not in path2_now:
+                key_batch.append(key)
+            elif path2_prior[key]['datetime'] != path2_now[key]['datetime']:
+                # if we are double-checking, we get the timestamp of the physical file
+                # and we use that instead of what we received from the calling app
+                key_batch.append(key)
+        for key in path2_now:
+            if key not in path2_prior:
+                key_batch.append(key)
+        cached_data=getFileInfoBatch(key_batch,path2_base)
+
     path2_lsl_file_new_BAD=False
     path2_deltas = {}
     path2_deleted = 0
@@ -417,9 +431,10 @@ def bidirSync():
         if key not in path2_now:
             skip_key=False
             if using_override and DOUBLE_CHECK_PATH2:
-                # TODO gather multiple calls in a single one
-                new_data=getFileInfo(key,path2_base,user_filter_file)
-                if new_data!=None:
+                #new_data=getFileInfo(key,path2_base,user_filter_file)
+                #if new_data!=None:
+                if key in cached_data.keys():
+                    new_data=cached_data[key]
                     logging.info(print_msg("Path2", "  File was NOT REALLY deleted, it's still in Path2. Ignoring", key))
                     path2_now[key]=new_data
                     path2_lsl_file_new_BAD=True
@@ -432,12 +447,12 @@ def bidirSync():
         else:
             if path2_prior[key]['datetime'] != path2_now[key]['datetime']:
                 if using_override and DOUBLE_CHECK_PATH2:
-                    # TODO gather multiple calls in a single one
                     # if we are double-checking, we get the timestamp of the physical file
                     # and we use that instead of what we received from the calling app
-                    new_data=getFileInfo(key,path2_base,user_filter_file)
-                    if new_data!=None and path2_now[key]['datetime']!=new_data['datetime']:
-                        path2_now[key]=new_data
+                    #new_data=getFileInfo(key,path2_base,user_filter_file)
+                    #if new_data!=None and path2_now[key]['datetime']!=new_data['datetime']:
+                    if key in cached_data.keys() and path2_now[key]['datetime']!=cached_data[key]['datetime']:
+                        path2_now[key]=cached_data[key]
                         path2_lsl_file_new_BAD=True
                 if path2_prior[key]['datetime'] < path2_now[key]['datetime']:
                     logging.info(print_msg("Path2", "  File is newer",key+" "+str(path2_prior[key]['datetime'])+" "+str(path2_now[key]['datetime'])))
@@ -459,9 +474,9 @@ def bidirSync():
         if key not in path2_prior:
             skip_key=False
             if using_override and DOUBLE_CHECK_PATH2:
-                # TODO gather multiple calls in a single one
-                new_data=getFileInfo(key,path2_base,user_filter_file)
-                if new_data==None:
+                #new_data=getFileInfo(key,path2_base,user_filter_file)
+                #if new_data==None:
+                if not key in cached_data.keys():
                     logging.info(print_msg("Path2", "  File does not really exist. Ignoring", key))
                     bad_keys.append(key)
                     path2_lsl_file_new_BAD=True
@@ -636,10 +651,11 @@ def bidirSync():
             if not simple_timestamp_copy:
                 for key in files_copy_P2P1:
                     path2_now_updated[key]=path2_now[key]
-                    # TODO gather multiple calls in a single one
-                    new_data=getFileInfo(key,path2_base,user_filter_file)
-                    if new_data!=None:
-                        path2_now_updated[key]=new_data
+                cached_data=getFileInfoBatch(files_copy_P2P1,path2_base)
+                for key in files_copy_P2P1:
+                    #new_data=getFileInfo(key,path2_base,user_filter_file)
+                    if key in cached_data.keys():
+                        path2_now_updated[key]=cached_data[key]
             logging.info(print_msg("Path2", "  Do queued copies to", "Path1"))
             if rclone_cmd('copy', path2_base, path1_base, files_file=files_copy_P2P1_filename, options=switches):
                 return RTN_CRITICAL
@@ -647,10 +663,13 @@ def bidirSync():
             if not simple_timestamp_copy:
                 for key in files_copy_P2P1:
                     path1_now_updated[key]=path2_now_updated[key]
-                    # TODO gather multiple calls in a single one
-                    new_data=getFileInfo(key,path1_base,user_filter_file)
-                    if new_data!=None:
-                        path1_now_updated[key]=new_data
+                cached_data=getFileInfoBatch(files_copy_P2P1,path1_base)
+                    #new_data=getFileInfo(key,path1_base,user_filter_file)
+                    #if new_data!=None:
+                    #    path1_now_updated[key]=new_data
+                for key in files_copy_P2P1:
+                    if key in cached_data.keys():
+                        path1_now_updated[key]=cached_data[key]
             if not args.no_cleanup:
                 os.remove(files_copy_P2P1_filename)
 
@@ -664,10 +683,13 @@ def bidirSync():
             if not simple_timestamp_copy:
                 for key in files_copy_P1P2:
                     path1_now_updated[key]=path1_now[key]
-                    # TODO gather multiple calls in a single one
-                    new_data=getFileInfo(key,path1_base,user_filter_file)
-                    if new_data!=None:
-                        path1_now_updated[key]=new_data
+                    #new_data=getFileInfo(key,path1_base,user_filter_file)
+                cached_data=getFileInfoBatch(files_copy_P1P2,path1_base)
+                    #if new_data!=None:
+                    #    path1_now_updated[key]=new_data
+                for key in files_copy_P1P2:
+                    if key in cached_data.keys():
+                        path1_now_updated[key]=cached_data[key]
             logging.info(print_msg("Path1", "  Do queued copies to", "Path2"))
             if rclone_cmd('copy', path1_base, path2_base, files_file=files_copy_P1P2_filename, options=switches):
                 return RTN_CRITICAL
@@ -675,10 +697,13 @@ def bidirSync():
             if not simple_timestamp_copy:
                 for key in files_copy_P1P2:
                     path2_now_updated[key]=path1_now_updated[key]
-                    # TODO gather multiple calls in a single one
-                    new_data=getFileInfo(key,path2_base,user_filter_file)
-                    if new_data!=None:
-                        path2_now_updated[key]=new_data
+                    #new_data=getFileInfo(key,path2_base,user_filter_file)
+                cached_data=getFileInfoBatch(files_copy_P1P2,path2_base)
+                    #if new_data!=None:
+                    #    path2_now_updated[key]=new_data
+                for key in files_copy_P1P2:
+                    if key in cached_data.keys():
+                        path2_now_updated[key]=cached_data[key]
             if not args.no_cleanup:
                 os.remove(files_copy_P1P2_filename)
 
@@ -1148,7 +1173,9 @@ def merge_gdrive_changes_gdrive(token, path, lsl_file_cached, ofile, filter_file
     
     return 0, token, changes_made, cached_data, new_data
 
-def getFileInfo(pname,path,filter_file):
+# TODO I believe this can be removed
+# TODO pass variable "switches" and pass it as options to rclone_lsl
+def getFileInfoWithFile(pname,path,filter_file):
     global lsl_temp_filter
     # write to a temp file F1 the lines:
     # + pname
@@ -1179,6 +1206,40 @@ def getFileInfo(pname,path,filter_file):
     if not pname in e.keys():
         return None
     return e[pname]
+
+# TODO pass variable "switches" and pass it as options to rclone_lsl
+def getFileInfo(pname,path):
+    if rclone_lsl(path+pname,tempfile) == 1:
+        logging.debug(":::::::::: something went wrong in rclone_lsl("+pname+")")
+    status,e=load_list(tempfile)
+    if status==1:
+        return None
+    if not pname in e.keys():
+        return None
+    return e[pname]
+
+# TODO pass variable "switches" and pass it as options to rclone_lsl
+def getFileInfoBatch(pnames,path):
+    global lsl_temp_filter
+
+    if pnames==[]:
+        return({})
+
+    tf=open(lsl_temp_filter,"w")
+    for f in pnames:
+        tf.write(f+"\n")
+    tf.close()
+
+    tempfile=lsl_temp_filter+"_TEMP2"
+    if rclone_lsl(path,tempfile,None,["--files-from",lsl_temp_filter]) == 1:
+        logging.debug(":::::::::: something went wrong in rclone_lsl("+pnames+")")
+    status,e=load_list(tempfile)
+    if status==1:
+        return None
+#    logging.debug("*****************")
+#    logging.debug(e)
+#    logging.debug("*****************")
+    return(e)
 
 ID_cache={}
 def getPath(service, f):
@@ -1394,11 +1455,9 @@ def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file
             tf.write("- **\n")
             tf.close()
 
-            logging.error("--------------->")
             #if rclone_lsl(path,ofile,filter_file,options2+["--files-from",lsl_temp_filter]) == 1: # TODO see if I need max_depth=1
             if rclone_lsl(path,ofile,filter_file,options,lsl_temp_filter,d) == 1:
                 return 1, orig_token, False, None, None
-            logging.error("<---------------")
             status,e=load_list(ofile)
             if status==1:
                 return 1, orig_token, False, None, None
