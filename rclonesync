@@ -417,6 +417,7 @@ def bidirSync():
         if key not in path2_now:
             skip_key=False
             if using_override and DOUBLE_CHECK_PATH2:
+                # TODO gather multiple calls in a single one
                 new_data=getFileInfo(key,path2_base,user_filter_file)
                 if new_data!=None:
                     logging.info(print_msg("Path2", "  File was NOT REALLY deleted, it's still in Path2. Ignoring", key))
@@ -431,6 +432,7 @@ def bidirSync():
         else:
             if path2_prior[key]['datetime'] != path2_now[key]['datetime']:
                 if using_override and DOUBLE_CHECK_PATH2:
+                    # TODO gather multiple calls in a single one
                     # if we are double-checking, we get the timestamp of the physical file
                     # and we use that instead of what we received from the calling app
                     new_data=getFileInfo(key,path2_base,user_filter_file)
@@ -457,6 +459,7 @@ def bidirSync():
         if key not in path2_prior:
             skip_key=False
             if using_override and DOUBLE_CHECK_PATH2:
+                # TODO gather multiple calls in a single one
                 new_data=getFileInfo(key,path2_base,user_filter_file)
                 if new_data==None:
                     logging.info(print_msg("Path2", "  File does not really exist. Ignoring", key))
@@ -633,6 +636,7 @@ def bidirSync():
             if not simple_timestamp_copy:
                 for key in files_copy_P2P1:
                     path2_now_updated[key]=path2_now[key]
+                    # TODO gather multiple calls in a single one
                     new_data=getFileInfo(key,path2_base,user_filter_file)
                     if new_data!=None:
                         path2_now_updated[key]=new_data
@@ -643,6 +647,7 @@ def bidirSync():
             if not simple_timestamp_copy:
                 for key in files_copy_P2P1:
                     path1_now_updated[key]=path2_now_updated[key]
+                    # TODO gather multiple calls in a single one
                     new_data=getFileInfo(key,path1_base,user_filter_file)
                     if new_data!=None:
                         path1_now_updated[key]=new_data
@@ -659,6 +664,7 @@ def bidirSync():
             if not simple_timestamp_copy:
                 for key in files_copy_P1P2:
                     path1_now_updated[key]=path1_now[key]
+                    # TODO gather multiple calls in a single one
                     new_data=getFileInfo(key,path1_base,user_filter_file)
                     if new_data!=None:
                         path1_now_updated[key]=new_data
@@ -669,6 +675,7 @@ def bidirSync():
             if not simple_timestamp_copy:
                 for key in files_copy_P1P2:
                     path2_now_updated[key]=path1_now_updated[key]
+                    # TODO gather multiple calls in a single one
                     new_data=getFileInfo(key,path2_base,user_filter_file)
                     if new_data!=None:
                         path2_now_updated[key]=new_data
@@ -1173,18 +1180,26 @@ def getFileInfo(pname,path,filter_file):
         return None
     return e[pname]
 
+ID_cache={}
 def getPath(service, f):
+    global ID_cache
     parent = f.get('parents')
     path = [{'id': f.get('id'), 'name': f.get('name')}]  # Result
     if parent:
         try:
             while True:
-                folder = service.files().get(
-                    fileId=parent[0], fields='id, name, parents').execute()
-                parent = folder.get('parents')
-                if parent is None:
-                    break
-                path.append({'id': parent[0], 'name': folder.get('name')})
+                old_id=parent[0]
+                if old_id in ID_cache.keys():
+                    (name,parent)=ID_cache[old_id]
+                    path.append({'id': parent[0], 'name': name})
+                else:
+                    folder = service.files().get(
+                        fileId=old_id, fields='id, name, parents').execute()
+                    parent = folder.get('parents')
+                    if parent is None:
+                        break
+                    path.append({'id': parent[0], 'name': folder.get('name')})
+                    ID_cache[old_id]=(folder.get('name'),parent)
         except Exception as e:
             logging.error("getPath(): some kind of network error occurred")
             logging.error("getPath(): the file info was: "+str(f))
@@ -1379,9 +1394,11 @@ def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file
             tf.write("- **\n")
             tf.close()
 
+            logging.error("--------------->")
             #if rclone_lsl(path,ofile,filter_file,options2+["--files-from",lsl_temp_filter]) == 1: # TODO see if I need max_depth=1
             if rclone_lsl(path,ofile,filter_file,options,lsl_temp_filter,d) == 1:
                 return 1, orig_token, False, None, None
+            logging.error("<---------------")
             status,e=load_list(ofile)
             if status==1:
                 return 1, orig_token, False, None, None
