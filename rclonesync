@@ -254,7 +254,7 @@ def bidirSync():
                 for item in files_first_sync_copy_P2P1:
                     outf.write(item + "\n")
             logging.info(print_msg("Path2", "  Do queued first-sync copies to", "Path1"))
-            if rclone_cmd('copy', path2_base, path1_base, files_file=files_first_sync_copy_P2P1_filename, options=switches):
+            if rclone_cmd('copy', path2_base, path1_base, files_file=files_first_sync_copy_P2P1_filename, options=switches+create_empty_src_dirs_switch):
                 return RTN_CRITICAL
             if not args.no_cleanup:
                 os.remove(files_first_sync_copy_P2P1_filename)
@@ -262,7 +262,7 @@ def bidirSync():
         
         logging.info(">>>>> --first-sync synching Path1 to Path2")
         # NOTE:  --min-size 0 added to block attempting to overwrite Google Doc files which have size -1 on Google Drive.  180729
-        if rclone_cmd('sync', path1_base, path2_base, filter_file=user_filter_file, options=switches + ['--min-size', '0']):
+        if rclone_cmd('sync', path1_base, path2_base, filter_file=user_filter_file, options=switches+create_empty_src_dirs_switch + ['--min-size', '0']):
             return RTN_CRITICAL
 
         if 1==0 and skip_refresh:
@@ -657,7 +657,7 @@ def bidirSync():
                     if key in cached_data.keys():
                         path2_now_updated[key]=cached_data[key]
             logging.info(print_msg("Path2", "  Do queued copies to", "Path1"))
-            if rclone_cmd('copy', path2_base, path1_base, files_file=files_copy_P2P1_filename, options=switches):
+            if rclone_cmd('copy', path2_base, path1_base, files_file=files_copy_P2P1_filename, options=switches+create_empty_src_dirs_switch):
                 return RTN_CRITICAL
             # [PART 2] refresh the timestamp of path2_now[item] for every item in files_copy_P2P1; put it back in path2_now[item]['orig_datetime']
             if not simple_timestamp_copy:
@@ -691,7 +691,7 @@ def bidirSync():
                     if key in cached_data.keys():
                         path1_now_updated[key]=cached_data[key]
             logging.info(print_msg("Path1", "  Do queued copies to", "Path2"))
-            if rclone_cmd('copy', path1_base, path2_base, files_file=files_copy_P1P2_filename, options=switches):
+            if rclone_cmd('copy', path1_base, path2_base, files_file=files_copy_P1P2_filename, options=switches+create_empty_src_dirs_switch):
                 return RTN_CRITICAL
             # [PART 2] refresh the timestamp of path1_now[item] for every item in files_copy_P1P2; put it back in path1_now[item]['orig_datetime']
             if not simple_timestamp_copy:
@@ -1766,6 +1766,8 @@ if __name__ == '__main__':
                         help="Retain working files - useful for debug and testing.")
     parser.add_argument('--path1-changes-only', action='store_true',
                         help="Only check for changes in path1 and return.")
+    parser.add_argument('--create-empty-src-dirs', action='store_true',
+                        help="Instruct rclone to create empty dirs during sync and copy.")
     parser.add_argument('-V', '--version', action='version', version='%(prog)s ' + __version__,
                         help="Return rclonesync's version number and exit.")
     args = parser.parse_args()
@@ -1782,7 +1784,10 @@ if __name__ == '__main__':
     dry_run      =  args.dry_run
     force        =  args.force
     rmdirs       =  args.remove_empty_directories
-
+    if args.create_empty_src_dirs:
+        create_empty_src_dirs_switch=["--create-empty-src-dirs"]
+    else:
+        create_empty_src_dirs_switch=[]
 
     # Set up logging
     if not args.no_datetime_log:
