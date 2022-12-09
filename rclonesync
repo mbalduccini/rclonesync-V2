@@ -148,7 +148,7 @@ def bidirSync():
         new_change_token=gdrive_changes_now(path1_base)
         logging.info(f"Stored token: "+str(change_token)+"; new token: "+str(new_change_token)+"; changed="+str(new_change_token!=change_token))
         if new_change_token!=change_token:
-            logging.info(f"CHANGES DETECTED")
+            logging.warning(f"CHANGES DETECTED") # warning because the calling up must be able to see the result regardless of log level
         return 0
 
     logging.info(f"Synching Path1  <{path1_base}>  with Path2  <{path2_base}>")
@@ -1792,7 +1792,7 @@ if __name__ == '__main__':
 
     if verbose >= 2:
         logging.getLogger().setLevel(logging.DEBUG)             # Log debug detail
-    elif verbose>0 or rc_verbose>0 or force or first_sync or dry_run:
+    elif verbose>0 or rc_verbose>0: # or force or first_sync or dry_run:
         logging.getLogger().setLevel(logging.INFO)              # Log each file transaction
     else:
         logging.getLogger().setLevel(logging.WARNING)           # Log only unusual events.  Normally silent.
