@@ -97,6 +97,117 @@ def get_crypt_remote(path):
         else:
             return(c[key]['remote'])
 
+# refresh the timestamp of path1_now[item] for every item in files_copy_files; put it back in path1_now[item]['orig_datetime']
+def get_latest_file_info_part1(path_base,files_copy_files,path1_now_updated,path1_now):
+    for key in files_copy_files:
+        path1_now_updated[key]=path1_now[key]
+        #new_data=getFileInfo(key,path1_base,user_filter_file)
+    cached_data=getFileInfoBatch(files_copy_files,path_base)
+        #if new_data!=None:
+        #    path1_now_updated[key]=new_data
+    for key in files_copy_files:
+        if key in cached_data.keys():
+            path1_now_updated[key]=cached_data[key]
+    return(path1_now_updated)
+
+# [PART 2] refresh the timestamp of path1_now[item] for every item in files_copy_files; put it back in path1_now[item]['orig_datetime']
+def get_latest_file_info_part2(path_base,files_copy_files,path1_now_updated,path2_now_updated,path1_now):
+    for key in files_copy_files:
+        path2_now_updated[key]=path1_now_updated[key]
+        #new_data=getFileInfo(key,path2_base,user_filter_file)
+    cached_data=getFileInfoBatch(files_copy_files,path_base)
+        #if new_data!=None:
+        #    path2_now_updated[key]=new_data
+    for key in files_copy_files:
+        if key in cached_data.keys():
+            path2_now_updated[key]=cached_data[key]
+    return(path1_now_updated)
+
+def do_copies(path1_base,path2_base,files_copy,path1_now_updated,path2_now_updated,path1_now,lsl_file_base,file_suffix,switches):
+    global simple_timestamp_copy
+
+    logging.error(print_msg(path1_base, "RRRR  int do_copies()", path2_base)+"==="+str(files_copy))
+    path_changes = False
+    files_copy_filename = lsl_file_base + file_suffix
+    files_copy_files=[ f for f in files_copy if not f.endswith("/") ]
+    files_copy_dirs=[ f for f in files_copy if f.endswith("/") ]
+    if len(files_copy_files) > 0:
+        logging.error(print_msg(path1_base, "RRRR  CASE A", path2_base))
+        path_changes = True
+        with io.open(files_copy_filename, mode='wt', encoding='utf8') as outf:
+            for item in files_copy_files:
+                outf.write(item + "\n")
+        # refresh the timestamp of path1_now[item] for every item in files_copy_files; put it back in path1_now[item]['orig_datetime']
+        if not simple_timestamp_copy:
+            path1_now_updated=get_latest_file_info_part1(path1_base,files_copy_files,path1_now_updated,path1_now)
+        logging.info(print_msg(path1_base, "  Do queued copies to", path2_base))
+        logging.error(print_msg(path1_base, "RRRR  Do queued copies to", path2_base))
+        if rclone_cmd('copy', path1_base, path2_base, files_file=files_copy_filename, options=switches):
+            return RTN_CRITICAL
+        # [PART 2] refresh the timestamp of path1_now[item] for every item in files_copy_files; put it back in path1_now[item]['orig_datetime']
+        if not simple_timestamp_copy:
+            path2_now_updated=get_latest_file_info_part2(path2_base,files_copy_files,path1_now_updated,path2_now_updated,path1_now)
+    if len(files_copy_dirs) > 0:
+        logging.error(print_msg(path1_base, "RRRR  CASE B", path2_base))
+        path_changes = True
+        # TODO here and in the other places where we do dir copies, consider copying only dirs that are known to be empty
+        with io.open(files_copy_filename, mode='wt', encoding='utf8') as outf:
+            for item in files_copy_dirs:
+                if item.endswith("/"):
+                    outf.write("+ " + item + "**\n")
+            outf.write("- **\n")
+        # refresh the timestamp of path1_now[item] for every item in files_copy_files; put it back in path1_now[item]['orig_datetime']
+        if not simple_timestamp_copy:
+            path1_now_updated=get_latest_file_info_part1(path1_base,files_copy_dirs,path1_now_updated,path1_now)
+        logging.info(print_msg(path1_base, "  Do queued dir copies to ", path2_base))
+        logging.error(print_msg(path1_base, "  Do queued dir copies to ", path2_base))
+        if rclone_cmd('copy', path1_base, path2_base, filter_file=files_copy_filename, options=switches+["--create-empty-src-dirs"]):
+            return RTN_CRITICAL
+        # [PART 2] refresh the timestamp of path1_now[item] for every item in files_copy_files; put it back in path1_now[item]['orig_datetime']
+        if not simple_timestamp_copy:
+            path2_now_updated=get_latest_file_info_part2(path2_base,files_copy_dirs,path1_now_updated,path2_now_updated,path1_now)
+    logging.error("REMOVE and 1==0!!!")
+    logging.error("REMOVE and 1==0!!!")
+    logging.error("REMOVE and 1==0!!!")
+    logging.error("REMOVE and 1==0!!!")
+    logging.error("REMOVE and 1==0!!!")
+    if not args.no_cleanup and 1==0:
+        os.remove(files_copy_filename)
+    return(path_changes,path1_now_updated,path2_now_updated)
+
+def do_deletes(path_base,files_delete,lsl_file_base,file_suffix,switches):
+    path_changes = False
+    files_delete_filename = lsl_file_base + file_suffix
+    files_delete_files=[ f for f in files_delete if not f.endswith("/") ]
+    files_delete_dirs=[ f for f in files_delete if f.endswith("/") ]
+    if len(files_delete_files) > 0:
+        path_changes = True
+        with io.open(files_delete_filename, mode='wt', encoding='utf8') as outf:
+            for item in files_delete_files:
+                outf.write(item + "\n")
+        logging.info(print_msg("", "  Do queued deletes on", path_base))
+        if rclone_cmd('delete', path_base, files_file=files_delete_filename, options=switches):
+            return RTN_CRITICAL
+    if len(files_delete_dirs) > 0:
+        path_changes = True
+        with io.open(files_delete_filename, mode='wt', encoding='utf8') as outf:
+            for item in files_delete_dirs:
+                outf.write("+ " + item + "**\n")
+            outf.write("- **\n")
+        logging.info(print_msg("", "  Do queued dir deletes on", path_base))
+        # This will NOT remove files or dirs containing files. It will remove all empty dirs in the filter and any subdirs of those dirs (as long as they are empty)
+        if rclone_cmd('rmdirs', path_base, filter_file=files_delete_filename, options=switches):
+            return RTN_CRITICAL
+    logging.error("REMOVE and 1==0!!!")
+    logging.error("REMOVE and 1==0!!!")
+    logging.error("REMOVE and 1==0!!!")
+    logging.error("REMOVE and 1==0!!!")
+    logging.error("REMOVE and 1==0!!!")
+    if not args.no_cleanup and 1==0:
+        os.remove(files_delete_filename)
+    return(path_changes)
+
+
 def bidirSync():
 
     global path1_lsl_file, path2_lsl_file
@@ -252,17 +363,26 @@ def bidirSync():
             files_first_sync_copy_P2P1_filename = lsl_file_base + "_files_first_sync_copy_P2P1"
             with io.open(files_first_sync_copy_P2P1_filename, mode='wt', encoding='utf8') as outf:
                 for item in files_first_sync_copy_P2P1:
-                    outf.write(item + "\n")
+                    if not item.endswith("/"):
+                        outf.write(item + "\n")
             logging.info(print_msg("Path2", "  Do queued first-sync copies to", "Path1"))
-            if rclone_cmd('copy', path2_base, path1_base, files_file=files_first_sync_copy_P2P1_filename, options=switches+create_empty_src_dirs_switch):
+            if rclone_cmd('copy', path2_base, path1_base, files_file=files_first_sync_copy_P2P1_filename, options=switches+["--create-empty-src-dirs"]):
                 return RTN_CRITICAL
+            with io.open(files_first_sync_copy_P2P1_filename, mode='wt', encoding='utf8') as outf:
+                for item in files_first_sync_copy_P2P1:
+                    if item.endswith("/"):
+                        outf.write("+ "+ item + "\n")
+                    outf.write("- **\n")
+                logging.info(print_msg("Path2", "  Do queued dir copies to ", "Path1"))
+                if rclone_cmd('copy', path2_base, path1_base, filter_file=files_first_sync_copy_P2P1_filename, options=switches+["--create-empty-src-dirs"]):
+                    return RTN_CRITICAL
             if not args.no_cleanup:
                 os.remove(files_first_sync_copy_P2P1_filename)
 
         
         logging.info(">>>>> --first-sync synching Path1 to Path2")
         # NOTE:  --min-size 0 added to block attempting to overwrite Google Doc files which have size -1 on Google Drive.  180729
-        if rclone_cmd('sync', path1_base, path2_base, filter_file=user_filter_file, options=switches+create_empty_src_dirs_switch + ['--min-size', '0']):
+        if rclone_cmd('sync', path1_base, path2_base, filter_file=user_filter_file, options=switches+["--create-empty-src-dirs"] + ['--min-size', '0']):
             return RTN_CRITICAL
 
         if 1==0 and skip_refresh:
@@ -358,7 +478,8 @@ def bidirSync():
                 logging.info(print_msg("Path1", "  File was deleted", key))
                 path1_deleted += 1
                 _deleted = True
-            else:
+            # For directories, we can disregard cases in which the directory timestamp has been changed
+            elif not key.endswith("/"):
                 if path1_prior[key]['datetime'] != path1_now[key]['datetime']:
                     if path1_prior[key]['datetime'] < path1_now[key]['datetime']:
                         logging.info(print_msg("Path1", "  File is newer", key))
@@ -444,7 +565,8 @@ def bidirSync():
                 logging.debug(key)
                 path2_deleted += 1
                 _deleted = True
-        else:
+        # For directories, we can disregard cases in which the directory timestamp has been changed
+        elif not key.endswith("/"):
             if path2_prior[key]['datetime'] != path2_now[key]['datetime']:
                 if using_override and DOUBLE_CHECK_PATH2:
                     # if we are double-checking, we get the timestamp of the physical file
@@ -577,34 +699,36 @@ def bidirSync():
                     already_handled[key] = 1
 
                 elif path2_deltas[key]['new'] or path2_deltas[key]['newer'] or path2_deltas[key]['older']:
-                    new_key=add_suffix_to_fname(key,"_Path1")
-                    logging.warning(print_msg("WARNING", "  New or changed in both paths", key))
-                    logging.warning(print_msg("Path1", "  Renaming Path1 copy", path1_base + new_key))
+                    if not key.endswith("/"):
+                        # exclude directories: two new directories are ok
+                        new_key=add_suffix_to_fname(key,"_Path1")
+                        logging.warning(print_msg("WARNING", "  New or changed in both paths", key))
+                        logging.warning(print_msg("Path1", "  Renaming Path1 copy", path1_base + new_key))
 
-                    if path1_now == None:
-                        status, path1_now = load_list(path1_lsl_file)
-                        if status:
-                            logging.error(print_msg("ERROR", f"Failed loading {path_text} list file <{lsl_file}>"))
-                            return RTN_ABORT
+                        if path1_now == None:
+                            status, path1_now = load_list(path1_lsl_file)
+                            if status:
+                                logging.error(print_msg("ERROR", f"Failed loading {path_text} list file <{lsl_file}>"))
+                                return RTN_ABORT
 
-                    if rclone_cmd('moveto', path1_base + key, path1_base + new_key, options=switches):
-                        return RTN_CRITICAL
-                    path1_now[new_key]=path1_now[key]
-                    path1_now[new_key]['moved-from']=key
-                    path1_now[key]['moved-to']=new_key
+                        if rclone_cmd('moveto', path1_base + key, path1_base + new_key, options=switches):
+                            return RTN_CRITICAL
+                        path1_now[new_key]=path1_now[key]
+                        path1_now[new_key]['moved-from']=key
+                        path1_now[key]['moved-to']=new_key
 
-                    logging.warning(print_msg("Path1", "  Queue copy to Path2", path2_base + new_key))
-                    files_copy_P1P2.append(new_key)
+                        logging.warning(print_msg("Path1", "  Queue copy to Path2", path2_base + new_key))
+                        files_copy_P1P2.append(new_key)
 
-                    new_key=add_suffix_to_fname(key,"_Path2")
-                    logging.warning(print_msg("Path2", "  Renaming Path2 copy", path2_base + new_key))
-                    if rclone_cmd('moveto', path2_base + key, path2_base + new_key, options=switches):
-                        return RTN_CRITICAL
-                    path2_now[new_key]=path2_now[key]
-                    path2_now[new_key]['moved-from']=key
-                    path2_now[key]['moved-to']=new_key
-                    logging.warning(print_msg("Path2", "  Queue copy to Path1", path1_base + new_key))
-                    files_copy_P2P1.append(new_key)
+                        new_key=add_suffix_to_fname(key,"_Path2")
+                        logging.warning(print_msg("Path2", "  Renaming Path2 copy", path2_base + new_key))
+                        if rclone_cmd('moveto', path2_base + key, path2_base + new_key, options=switches):
+                            return RTN_CRITICAL
+                        path2_now[new_key]=path2_now[key]
+                        path2_now[new_key]['moved-from']=key
+                        path2_now[key]['moved-to']=new_key
+                        logging.warning(print_msg("Path2", "  Queue copy to Path1", path1_base + new_key))
+                        files_copy_P2P1.append(new_key)
                     already_handled[key] = 1
 
             else: # Path1 deleted
@@ -628,108 +752,16 @@ def bidirSync():
                     logging.info(print_msg("Path1", "  Queue delete", path1_base + key))
                     files_delete_P1.append(key)
 
-        path1_changes = False
-        path2_changes = False
+#        path1_changes = False
+#        path2_changes = False
         path1_now_updated = {}
         path2_now_updated = {}
-        # Do the batch operation
-        if len(files_copy_P2P1) > 0:
-            path1_changes = True
-            files_copy_P2P1_filename = lsl_file_base + "_files_copy_P2P1"
-            with io.open(files_copy_P2P1_filename, mode='wt', encoding='utf8') as outf:
-                for item in files_copy_P2P1:
-                    try:
-                        with io.open(path2_base+item, 'rb') as ifile:
-                            current_file_hash = hashlib.md5(ifile.read()).hexdigest() # bytes(hashlib.md5(ifile.read()).hexdigest(), encoding='utf-8')
-                            logging.info("===TEMP: Path2 file to be copied is: "+item+"; path2_base="+path2_base+"; MD5="+str(current_file_hash)) # [MB] WORK IN PROGRESS!!!
-                    except Exception as error:
-                        # [MB] TODO -- the file no longer exists (moved before we got to it?)
-                        # Disregard for now, but later we'll need to do something about it
-                        logging.info("===FIXME: file "+path2_base+item+" no longer exists but we need to copy it to Path1!!") # [MB] WORK IN PROGRESS!!!
-                    outf.write(item + "\n")
-            # refresh the timestamp of path2_now[item] for every item in files_copy_P2P1; put it back in path2_now[item]['orig_datetime']
-            if not simple_timestamp_copy:
-                for key in files_copy_P2P1:
-                    path2_now_updated[key]=path2_now[key]
-                cached_data=getFileInfoBatch(files_copy_P2P1,path2_base)
-                for key in files_copy_P2P1:
-                    #new_data=getFileInfo(key,path2_base,user_filter_file)
-                    if key in cached_data.keys():
-                        path2_now_updated[key]=cached_data[key]
-            logging.info(print_msg("Path2", "  Do queued copies to", "Path1"))
-            if rclone_cmd('copy', path2_base, path1_base, files_file=files_copy_P2P1_filename, options=switches+create_empty_src_dirs_switch):
-                return RTN_CRITICAL
-            # [PART 2] refresh the timestamp of path2_now[item] for every item in files_copy_P2P1; put it back in path2_now[item]['orig_datetime']
-            if not simple_timestamp_copy:
-                for key in files_copy_P2P1:
-                    path1_now_updated[key]=path2_now_updated[key]
-                cached_data=getFileInfoBatch(files_copy_P2P1,path1_base)
-                    #new_data=getFileInfo(key,path1_base,user_filter_file)
-                    #if new_data!=None:
-                    #    path1_now_updated[key]=new_data
-                for key in files_copy_P2P1:
-                    if key in cached_data.keys():
-                        path1_now_updated[key]=cached_data[key]
-            if not args.no_cleanup:
-                os.remove(files_copy_P2P1_filename)
 
-        if len(files_copy_P1P2) > 0:
-            path2_changes = True
-            files_copy_P1P2_filename = lsl_file_base + "_files_copy_P1P2"
-            with io.open(files_copy_P1P2_filename, mode='wt', encoding='utf8') as outf:
-                for item in files_copy_P1P2:
-                    outf.write(item + "\n")
-            # refresh the timestamp of path1_now[item] for every item in files_copy_P1P2; put it back in path1_now[item]['orig_datetime']
-            if not simple_timestamp_copy:
-                for key in files_copy_P1P2:
-                    path1_now_updated[key]=path1_now[key]
-                    #new_data=getFileInfo(key,path1_base,user_filter_file)
-                cached_data=getFileInfoBatch(files_copy_P1P2,path1_base)
-                    #if new_data!=None:
-                    #    path1_now_updated[key]=new_data
-                for key in files_copy_P1P2:
-                    if key in cached_data.keys():
-                        path1_now_updated[key]=cached_data[key]
-            logging.info(print_msg("Path1", "  Do queued copies to", "Path2"))
-            if rclone_cmd('copy', path1_base, path2_base, files_file=files_copy_P1P2_filename, options=switches+create_empty_src_dirs_switch):
-                return RTN_CRITICAL
-            # [PART 2] refresh the timestamp of path1_now[item] for every item in files_copy_P1P2; put it back in path1_now[item]['orig_datetime']
-            if not simple_timestamp_copy:
-                for key in files_copy_P1P2:
-                    path2_now_updated[key]=path1_now_updated[key]
-                    #new_data=getFileInfo(key,path2_base,user_filter_file)
-                cached_data=getFileInfoBatch(files_copy_P1P2,path2_base)
-                    #if new_data!=None:
-                    #    path2_now_updated[key]=new_data
-                for key in files_copy_P1P2:
-                    if key in cached_data.keys():
-                        path2_now_updated[key]=cached_data[key]
-            if not args.no_cleanup:
-                os.remove(files_copy_P1P2_filename)
+        path1_changes,path2_now_updated,path1_now_updated=do_copies(path2_base,path1_base,files_copy_P2P1,path2_now_updated,path1_now_updated,path2_now,lsl_file_base,"_files_copy_P2P1",switches)
+        path2_changes,path1_now_updated,path2_now_updated=do_copies(path1_base,path2_base,files_copy_P1P2,path1_now_updated,path2_now_updated,path1_now,lsl_file_base,"_files_copy_P1P2",switches)
 
-        if len(files_delete_P1) > 0:
-            path1_changes = True
-            files_delete_P1_filename = lsl_file_base + "_files_delete_P1"
-            with io.open(files_delete_P1_filename, mode='wt', encoding='utf8') as outf:
-                for item in files_delete_P1:
-                    outf.write(item + "\n")
-            logging.info(print_msg("", "  Do queued deletes on", "Path1"))
-            if rclone_cmd('delete', path1_base, files_file=files_delete_P1_filename, options=switches):
-                return RTN_CRITICAL
-            if not args.no_cleanup:
-                os.remove(files_delete_P1_filename)
-
-        if len(files_delete_P2) > 0:
-            path2_changes = True
-            files_delete_P2_filename = lsl_file_base + "_files_delete_P2"
-            with io.open(files_delete_P2_filename, mode='wt', encoding='utf8') as outf:
-                for item in files_delete_P2:
-                    outf.write(item + "\n")
-            logging.info(print_msg("", "  Do queued deletes on", "Path2"))
-            if rclone_cmd('delete', path2_base, files_file=files_delete_P2_filename, options=switches):
-                return RTN_CRITICAL
-            if not args.no_cleanup:
-                os.remove(files_delete_P2_filename)
+        path1_changes=path1_changes or do_deletes(path1_base,files_delete_P1,lsl_file_base,"_files_delete_P1",switches)
+        path2_changes=path2_changes or do_deletes(path2_base,files_delete_P2,lsl_file_base,"_files_delete_P2",switches)
 
 #        files_copy_P1P2 = None      # Free up the memory
 #        files_copy_P2P1 = None
@@ -898,6 +930,65 @@ def rclone_lsl(path, ofile, filter_file=None, options=None, extra_filter_file=No
                 return 0
             logging.info(print_msg("WARNING", "rclone lsl try {} failed.".format(x+1)))
     logging.error(print_msg("ERROR", "rclone lsl failed.  Specified path invalid?  (Line {})".format(linenum)))
+    return 1
+
+
+# ***** rclone call wrapper functions with retries *****
+# If passing --files-from, add to options variable
+MAXTRIES=3
+def rclone_lsd(path, ofile, filter_file=None, options=None, extra_filter_file=None, max_depth=-1, append=False):
+    """
+    Fetch an rclone LSD of the path and APPEND it to ofile.
+    Every dir name will have "/" added at the end to distinguish it from files
+    The number-of-files column is removed to match the lsl format
+
+    filter_file is a string full path to a file which will be passed to rclone --filter-from.
+    options is a list of switches passed to rclone (not currently used)
+    """
+    linenum = inspect.getframeinfo(inspect.stack()[1][0]).lineno
+#    if individual_file_path=="":
+    process_args = [rclone, "lsd", path, "--config", rcconfig, "-R"]
+#    else:
+#        process_args = [rclone, "lsl", individual_file_path, "--config", rcconfig]
+    if filter_file is not None: # and individual_file_path=="":
+        process_args.extend(["--filter-from", filter_file])
+    if extra_filter_file is not None:
+        process_args.extend(["--filter-from", extra_filter_file])
+    if max_depth != -1:
+        process_args.extend(["--max-depth", str(max_depth)])
+    if options is not None:
+        process_args.extend(options)
+    if args.rclone_args is not None:
+        process_args.extend(args.rclone_args)
+    logging.debug("    rclone command:  {}".format(process_args))
+    logging.error("REMOVE!!    rclone command:  {}".format(process_args))
+    ofile_LSD=ofile+"_LSD"
+    for x in range(MAXTRIES):
+        of=io.open(ofile_LSD, "wt", encoding='utf8')
+        if not subprocess.call(process_args, stdout=of):
+            of.close()
+            LINE_FORMAT = re.compile(r'\s*(-?[0-9]+) ([\d\-]+) ([\d:]+)\s\s*(-?[0-9]+) (.*)')
+            line_cnt=0
+            with io.open(ofile_LSD, mode='rt', encoding='utf8') as f:
+                with io.open(ofile, "at" if append else "wt", encoding='utf8') as xf:
+                    for line in f:
+                        line_cnt += 1
+                        out = LINE_FORMAT.match(line)
+                        if out:
+                            # size = out.group(1)
+                            date = out.group(2)
+                            _time = out.group(3)
+                            # n_files = out.group(4)
+                            dirname = out.group(5)
+                            if not dirname.endswith("/"):
+                                dirname+="/"
+                            xf.write("0 "+date+" "+_time+".000000000 "+dirname+"\n")
+                        else:
+                            logging.warning("Something wrong with this line (ignored) in {}. :\n   <{}>".format(ofile, line))
+            return 0
+        logging.info(print_msg("WARNING", "rclone lsd try {} failed.".format(x+1)))
+        of.close()
+    logging.error(print_msg("ERROR", "rclone lsd failed.  Specified path invalid?  (Line {})".format(linenum)))
     return 1
 
 
@@ -1222,23 +1313,38 @@ def getFileInfo(pname,path):
 def getFileInfoBatch(pnames,path):
     global lsl_temp_filter
 
-    if pnames==[]:
-        return({})
-
-    tf=open(lsl_temp_filter,"w")
-    for f in pnames:
-        tf.write(f+"\n")
-    tf.close()
-
     tempfile=lsl_temp_filter+"_TEMP2"
-    if rclone_lsl(path,tempfile,None,["--files-from",lsl_temp_filter]) == 1:
-        logging.debug(":::::::::: something went wrong in rclone_lsl("+pnames+")")
-    status,e=load_list(tempfile)
-    if status==1:
-        return None
-#    logging.debug("*****************")
-#    logging.debug(e)
-#    logging.debug("*****************")
+
+    e={}
+    files=[ f for f in pnames if not f.endswith("/") ]
+    if files!=[]:
+        tf=open(lsl_temp_filter,"w")
+        for f in files:
+            tf.write(f+"\n")
+        tf.close()
+        if rclone_lsl(path,tempfile,None,["--files-from",lsl_temp_filter]) == 1:
+            logging.debug(":::::::::: something went wrong in rclone_lsl("+pnames+")")
+        status,e=load_list(tempfile)
+        if status==1:
+            return None
+
+    dirs=[ f for f in pnames if f.endswith("/") ]
+    if dirs!=[]:
+        tf=open(lsl_temp_filter,"w")
+        for f in dirs:
+            tf.write(f+"**\n")
+            logging.error("R14 "+f+"**")
+        tf.close()
+        if rclone_lsd(path,tempfile,None,["--files-from",lsl_temp_filter]) == 1:
+            logging.debug(":::::::::: something went wrong in rclone_lsl("+pnames+")")
+        status,e2=load_list(tempfile)
+        if status==1:
+            return None
+        e.update(e2)
+
+    logging.error("RR*****************")
+    logging.error("RR "+str(e))
+    logging.error("RR*****************")
     return(e)
 
 ID_cache={}
@@ -1275,6 +1381,48 @@ def pathToStr(p):
     if p==None: return(None)
     return("/".join([ d['name'] for d in list(p)]))
 
+def fetch_file_info(path,info,file_list,is_folders,maxdepth,ofile,filter_file,options):
+    global lsl_temp_filter
+
+    changes_made=False
+    tf=open(lsl_temp_filter,"w")
+    for file_path in file_list:
+        tf.write("+ "+file_path+("*" if is_folders else "")+"\n")
+        logging.error("R25 + "+file_path+("*" if is_folders else ""))
+    logging.error("R25 - **")
+    tf.write("- **\n")
+    tf.close()
+
+    if is_folders:
+        if rclone_lsd(path,ofile,filter_file,options,lsl_temp_filter,maxdepth) == 1:
+            return 1, orig_token, False, None, None
+    else:
+        if rclone_lsl(path,ofile,filter_file,options,lsl_temp_filter,maxdepth) == 1:
+            return 1, orig_token, False, None, None
+    status,e=load_list(ofile)
+    if status==1:
+        return 1, orig_token, False, None, None
+    logging.debug("*****************")
+    logging.debug(e)
+    logging.debug("*****************")
+    logging.error("RRR*****************")
+    logging.error(e)
+    logging.error("RRR*****************")
+
+    # in the output, look for P1
+    # if not found, then it means that the file is filtered out
+    for file_path in file_list:
+        logging.debug("file modified: "+file_path)
+        if not file_path in e.keys():
+            logging.debug("actually, file was filtered out: "+file_path)
+            logging.error("RRR actually, file was filtered out: "+file_path)
+            # a filter must have dropped the file
+            continue
+        logging.debug("***"+str(e[file_path]))
+        info[file_path]=e[file_path]
+        changes_made=True
+    return((changes_made,info))
+
 
 def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file=None, options=None):
     """
@@ -1285,6 +1433,7 @@ def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file
     global lsl_temp_filter
 
     added_files={}
+    added_dirs={}
 
     orig_token=token
     linenum = inspect.getframeinfo(inspect.stack()[1][0]).lineno
@@ -1295,7 +1444,8 @@ def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file
     remote_type_crypt=True if path!=path_raw else False
 
     try:
-        changed=[]
+        #changed=[]
+        changed_dict={}
         page_token=token
         while page_token is not None:
             response = service.changes().list(pageToken=page_token,spaces='drive',includeRemoved=True,pageSize=1000,fields="nextPageToken,newStartPageToken,changes(fileId,removed,file(id,name,trashed,mimeType,md5Checksum,parents))").execute()
@@ -1305,19 +1455,26 @@ def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file
                 logging.debug('***'+str(change))
                 f=change.get('file')
                 if f!=None:
+                    logging.error("NAME="+f.get('name')) ###
                     logging.debug("NAME="+f.get('name'))
                     logging.debug("TRASHED="+str(f.get('trashed')))
+                    logging.error("TRASHED="+str(f.get('trashed')))
                     logging.debug("MIMETYPE="+f.get('mimeType'))
                     logging.debug("MD5="+str(f.get('md5Checksum')))
-    
+
+                    name=f.get('name')    
                     mime=f.get('mimeType')
-                    if mime=="application/vnd.google-apps.folder":
-                        logging.debug("Folder detected. Ignoring")
-                    elif mime.startswith("application/vnd.google-apps."):
+                    is_folder=(mime=="application/vnd.google-apps.folder")
+                    if not is_folder and mime.startswith("application/vnd.google-apps."):
                         logging.debug("TODO: Google Apps file detected. Ignoring") # TODO
                     else:
+                        if is_folder:
+                            logging.debug("Folder detected: "+name)
+                            logging.error("FOLDER: "+name)
                         removed=f.get('trashed') or change.get('removed')
-                        changed.append([change.get('fileId'),f.get('name'),"remove" if removed else "modify", f ])
+#                        changed.append([change.get('fileId'),name,"remove" if removed else "modify", f, (mime=="application/vnd.google-apps.folder") ])
+                        logging.error("RRR removed="+str(removed))
+                        changed_dict[change.get('fileId')]=[change.get('fileId'),name,"remove" if removed else "modify", f, (mime=="application/vnd.google-apps.folder") ]
                 else:
                     logging.info("PROBLEM: file "+change.get('fileId')+" does not have file info. Probably it was removed. I should really have a database of fileIds and their former names, so I can delete it locally. Ignoring it for now") # TODO
     
@@ -1334,6 +1491,7 @@ def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file
 
     token=saved_start_page_token
 
+    changed=changed_dict.values()
     if len(changed)==0:
         return 0, token, False, None, None
         
@@ -1351,6 +1509,7 @@ def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file
         remote_root=""
     changes_made=False
     new_data=cached_data.copy()
+    decrypt_cache={}
     for entry in changed:
         i=0
         file_id=entry[i]
@@ -1361,6 +1520,8 @@ def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file
         i+=1
         file_record=entry[i]
         i+=1
+        file_is_folder=entry[i]
+        i+=1
 
         file_path=pathToStr(getPath(service, file_record))
         if file_path==None:
@@ -1368,7 +1529,6 @@ def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file
                 logging.debug("PROBLEM: file "+file_name+" was moved to trash and we cannot find its parent. Disregarding it for now rather than aborting. Probably, we'll have a file left behind in the local filesystem")
                 continue
             return 1, orig_token, False, None, None
-
         logging.debug("pathToStr() returned: "+file_path)
         if file_path=="" or not file_path.startswith(remote_root): # we should drop this
             continue
@@ -1377,32 +1537,47 @@ def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file
         if remote_type_crypt:
             path_remote=path.split(":",1)[0]+":"
             logging.debug("Converting "+file_path+" to decrypted name")
-            global lsl_temp_crypt
-            res=rclone_cmd_read_output("cryptdecode", lsl_temp_crypt, path_remote, file_path)
-            if res==1:
-                continue
-            # TODO cryptdecode separator. Change if rclone changes
-            sep=" \t "
-            crypt_fp=open(lsl_temp_crypt,"rt")
-            l=crypt_fp.readline().rstrip()
-            p=l.index(sep)
-            if p==-1:
-                continue
-            file_path=l[p+len(sep):]
-            crypt_fp.close()
+            logging.error("CONVERTING "+file_path)
+            if file_path in decrypt_cache:
+                file_path=decrypt_cache[file_path]
+            else:
+                global lsl_temp_crypt
+                res=rclone_cmd_read_output("cryptdecode", lsl_temp_crypt, path_remote, file_path)
+                if res==1:
+                    continue
+                # TODO cryptdecode separator. Change if rclone changes
+                sep=" \t "
+                crypt_fp=open(lsl_temp_crypt,"rt")
+                l=crypt_fp.readline().rstrip()
+                p=l.index(sep)
+                if p==-1:
+                    continue
+                new_file_path=l[p+len(sep):]
+                crypt_fp.close()
+                decrypt_cache[file_path]=new_file_path
+                file_path=new_file_path
             logging.debug("Decrypted path is "+file_path)
         logging.debug("Change entry to merge: "+file_path)
+        logging.error("MERGING "+file_path)
+        logging.error("RRRR ACTION="+file_action)
 
         if file_action=="remove":
-            if file_path in new_data:
-                del new_data[file_path]
+            file_path_adj=file_path+"/" if file_is_folder else file_path
+            if file_path_adj in new_data:
+                del new_data[file_path_adj]
                 changes_made=True
-                logging.debug("file deleted: "+file_path)
+                logging.debug("file deleted: "+file_path_adj)
+                logging.error("RRRR file deleted: "+file_path_adj)
 #        else:
         elif COMBINED_LSL:
             d=file_path.count("/")+1
-            added_files.setdefault(d,[])
-            added_files[d].append(file_path)
+            if file_is_folder:
+                logging.error("APPENDING "+file_path)
+                added_dirs.setdefault(d,[])
+                added_dirs[d].append(file_path+"/")
+            else:
+                added_files.setdefault(d,[])
+                added_files[d].append(file_path)
         else: # not COMBINED_LSL
             ## drop the filename from P1. Call the resulting path P2
             #dir_path=os.path.dirname(file_path)
@@ -1410,72 +1585,60 @@ def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file
             ## + /....P2/**
             ## - **
 
-            tf=open(lsl_temp_filter,"w")
-            # old, less efficient approach
-#            #tf.write("+ /"+dir_path+("/" if dir_path!="" else "")+"**\n")
-#            #tf.write("- **\n")
-#            tf.write("+ /"+dir_path+("/" if dir_path!="" else "")+"**\n")
-#            tf.write("- **\n")
-            tf.write("+ "+file_path+"\n")
-            tf.write("- **\n")
-            tf.close()
-
             # old, less efficient approach <<< actually useful to prune the search
             # max_depth together with the filter allow us to look at exactly max_depth
             max_depth=file_path.count("/")+1
 
-            # call rclone lsl with the cli path, but provide at the end of the cli --filter-from F1
-            # old, less efficient approach <<< actually useful to prune the search
-            if rclone_lsl(path,ofile,filter_file,options,lsl_temp_filter,max_depth) == 1:
-#            if rclone_lsl(path,ofile,filter_file,options,lsl_temp_filter) == 1:
-                return 1, orig_token, False, None, None
-            status,e=load_list(ofile)
-            if status==1:
-                return 1, orig_token, False, None, None
-            logging.debug("*****************")
-            logging.debug(e)
-            logging.debug("*****************")
-            # in the output, look for P1
-            # if not found, then it means that the file is filtered out
-#            cached_data[file_path]=e[next(iter(e))] # rclone lsl returns only the filename when applied to individual files
-            logging.debug("file modified: "+file_path)
-            if not file_path in e.keys():
-                logging.debug("actually, file was filtered out: "+file_path)
-                # a filter must have dropped the file
-                continue
-            logging.debug("***"+str(e[file_path]))
-            new_data[file_path]=e[file_path]
-            changes_made=True
+            changes_made,new_data=fetch_file_info(path,new_data,[file_path],file_is_folder,max_depth,ofile,filter_file,options)
+
+#            if file_is_folder:
+#                file_path+="/"
+#
+#            tf=open(lsl_temp_filter,"w")
+#            # old, less efficient approach
+##            #tf.write("+ /"+dir_path+("/" if dir_path!="" else "")+"**\n")
+##            #tf.write("- **\n")
+##            tf.write("+ /"+dir_path+("/" if dir_path!="" else "")+"**\n")
+##            tf.write("- **\n")
+#            tf.write("+ "+file_path+"\n")
+#            tf.write("- **\n")
+#            tf.close()
+#
+#            if file_is_folder:
+#                if rclone_lsd(path,ofile,filter_file,options,lsl_temp_filter,max_depth) == 1:
+#                    return 1, orig_token, False, None, None
+#            else:
+#                # call rclone lsl with the cli path, but provide at the end of the cli --filter-from F1
+#                # old, less efficient approach <<< actually useful to prune the search
+#                if rclone_lsl(path,ofile,filter_file,options,lsl_temp_filter,max_depth) == 1:
+##                if rclone_lsl(path,ofile,filter_file,options,lsl_temp_filter) == 1:
+#                    return 1, orig_token, False, None, None
+#            status,e=load_list(ofile)
+#            if status==1:
+#                return 1, orig_token, False, None, None
+#            logging.debug("*****************")
+#            logging.debug(e)
+#            logging.debug("*****************")
+#            # in the output, look for P1
+#            # if not found, then it means that the file is filtered out
+##            cached_data[file_path]=e[next(iter(e))] # rclone lsl returns only the filename when applied to individual files
+#            logging.debug("file modified: "+file_path)
+#            if not file_path in e.keys():
+#                logging.debug("actually, file was filtered out: "+file_path)
+#                # a filter must have dropped the file
+#                continue
+#            logging.debug("***"+str(e[file_path]))
+#            new_data[file_path]=e[file_path]
+#            changes_made=True
 
     if COMBINED_LSL:
         for d in added_files.keys():
-            tf=open(lsl_temp_filter,"w")
-            for file_path in added_files[d]:
-                tf.write("+ "+file_path+"\n")
-            tf.write("- **\n")
-            tf.close()
-
-            #if rclone_lsl(path,ofile,filter_file,options2+["--files-from",lsl_temp_filter]) == 1: # TODO see if I need max_depth=1
-            if rclone_lsl(path,ofile,filter_file,options,lsl_temp_filter,d) == 1:
-                return 1, orig_token, False, None, None
-            status,e=load_list(ofile)
-            if status==1:
-                return 1, orig_token, False, None, None
-            logging.debug("*****************")
-            logging.debug(e)
-            logging.debug("*****************")
-
-            # in the output, look for P1
-            # if not found, then it means that the file is filtered out
-            for file_path in added_files[d]:
-                logging.debug("file modified: "+file_path)
-                if not file_path in e.keys():
-                    logging.debug("actually, file was filtered out: "+file_path)
-                    # a filter must have dropped the file
-                    continue
-                logging.debug("***"+str(e[file_path]))
-                new_data[file_path]=e[file_path]
-                changes_made=True
+            logging.error("FILTER FOR depth "+str(d))
+            changes_made,new_data=fetch_file_info(path.new_data,added_files[d],False,d,ofile,filter_file,options)
+        for d in added_dirs.keys():
+            logging.error("FILTER FOR depth "+str(d))
+            changes_made2,new_data=fetch_file_info(path,new_data,added_dirs[d],True,d,ofile,filter_file,options)
+            changes_made=changes_made or changes_made2
 
     if changes_made:
         logging.debug("writing changes to "+ofile+"; contains data for "+file_path+": "+("yes" if file_path in new_data else "no"))
@@ -1512,6 +1675,7 @@ def rclone_cmd(cmd, p1=None, p2=None, filter_file=None, files_file=None, options
     if args.rclone_args is not None:
         process_args.extend(args.rclone_args)
     logging.debug("    rclone command:  {}".format(process_args))
+    logging.error("REMOVE ME!!!    rclone command:  {}".format(process_args))
     for x in range(MAXTRIES):
         try:
             p = subprocess.Popen(process_args)
@@ -1646,8 +1810,11 @@ def get_and_load_lsl(path_text, lsl_file, path12=None):
     if path12 is not None:
         if override_filename_exists(lsl_file):
             shutil.move(override_filename(lsl_file),lsl_file)
-        elif rclone_lsl(path12, lsl_file, filter_file=user_filter_file):
-            return RTN_ABORT, None
+        else:
+            if rclone_lsl(path12, lsl_file, filter_file=user_filter_file):
+                return RTN_ABORT, None
+            if rclone_lsd(path12, lsl_file, filter_file=user_filter_file, append=True):
+                return RTN_ABORT, None
     status, loaded_list = load_list(lsl_file)
     if status:
         logging.error(print_msg("ERROR", f"Failed loading {path_text} list file <{lsl_file}>"))
@@ -1669,6 +1836,27 @@ def incremental_get_and_load_lsl(path_text, change_token, lsl_file_cached, lsl_f
     if path12 is None:
         logging.error("incremental_get_and_load_lsls() called without path12")
         return RTN_CRITICAL, None, None, False, change_token
+
+#TODO remove these lines and do_folders
+#    global do_folders
+#    do_folders=True
+#    loaded_list = None
+#    status, change_token, changes_detected, cached_data, loaded_list = merge_gdrive_changes(change_token, path12, lsl_file_cached, lsl_file, filter_file=user_filter_file)
+#    logging.error("incremental_get_and_load_lsls(): merging complete WITH do_foldrs")
+#    if status != 0:
+#        return RTN_ABORT, None, None, False, change_token
+# <<<<<<<<<<<<<<<<<<<<< add mkdir() and rmdir() at the end of the program; 
+# <<<<<<<<<<<<<<<<<<<<< do incremental dirs in the app
+# <<<<<<<<<<<<<<<<<<<<< remove do_folders
+#<<<<<<<<<< do not remove a dir if there is a current "key" that is in it
+# <<<<<<<< if dir u/ needs to be removed:
+# 1. create the filter file with (all dirs to be removed can go in there):
+#+ u/**
+#- **
+# 2. run: rclone rmdirs <remote:> --filter-from <filter file>
+#    This will NOT remove files or dirs containing files. It will remove all empty dirs in the filter and any subdirs of those dirs (as long as they are empty)
+#<<<<<<<<<<<<<<<<
+
 
     loaded_list = None
     status, change_token, changes_detected, cached_data, loaded_list = merge_gdrive_changes(change_token, path12, lsl_file_cached, lsl_file, filter_file=user_filter_file)
@@ -1785,9 +1973,11 @@ if __name__ == '__main__':
     force        =  args.force
     rmdirs       =  args.remove_empty_directories
     if args.create_empty_src_dirs:
-        create_empty_src_dirs_switch=["--create-empty-src-dirs"]
-    else:
-        create_empty_src_dirs_switch=[]
+        logging.error("STOP USING OPTION --create-empty-src-dirs!!!!!!!")
+        logging.error("STOP USING OPTION --create-empty-src-dirs!!!!!!!")
+        logging.error("STOP USING OPTION --create-empty-src-dirs!!!!!!!")
+        logging.error("STOP USING OPTION --create-empty-src-dirs!!!!!!!")
+        logging.error("STOP USING OPTION --create-empty-src-dirs!!!!!!!")
 
     # Set up logging
     if not args.no_datetime_log:
