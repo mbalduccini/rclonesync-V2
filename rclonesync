@@ -935,6 +935,9 @@ def rclone_lsl(path, ofile, filter_file=None, options=None, extra_filter_file=No
 
 # ***** rclone call wrapper functions with retries *****
 # If passing --files-from, add to options variable
+# IMPORTANT: if using --files-from, for some unknown reason
+#            the dirs MUST end with "/**" or their info won't 
+#            be reported. See getFileInfoBatch()
 MAXTRIES=3
 def rclone_lsd(path, ofile, filter_file=None, options=None, extra_filter_file=None, max_depth=-1, append=False):
     """
@@ -1328,6 +1331,8 @@ def getFileInfoBatch(pnames,path):
         if status==1:
             return None
 
+    # We must add "/**" after the dir names for some unknown reason.
+    # Otherwise, rclone lsd does not return info about (most of!) them
     dirs=[ f for f in pnames if f.endswith("/") ]
     if dirs!=[]:
         tf=open(lsl_temp_filter,"w")
