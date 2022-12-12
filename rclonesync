@@ -408,6 +408,7 @@ def bidirSync():
                 logging.info(print_msg("Path2", "  --first-sync queue copy to Path1", key))
                 files_first_sync_copy_P2P1.append(key)
 
+        files_first_sync_copy_P2P1_filename = lsl_file_base + "_files_first_sync_copy_P2P1"
         path1_now_updated = {}
         path2_now_updated = {}
         status, path1_changes,path2_now_updated,path1_now_updated=do_copies(path2_base,path1_base,files_first_sync_copy_P2P1,path2_now_updated,path1_now_updated,path2_now,files_first_sync_copy_P2P1_filename,switches)
