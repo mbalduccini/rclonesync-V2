@@ -146,12 +146,11 @@ def mkdir_via_copy(path1_base,path2_base,files_copy_dirs,files_copy_filename,swi
     return rclone_cmd('copy', path1_base, path2_base, filter_file=files_copy_filename, options=switches+["--create-empty-src-dirs"])
 
 
-def do_copies(path1_base,path2_base,files_copy,path1_now_updated,path2_now_updated,path1_now,lsl_file_base,file_suffix,switches):
+def do_copies(path1_base,path2_base,files_copy,path1_now_updated,path2_now_updated,path1_now,files_copy_filename,switches):
     global simple_timestamp_copy
 
     logging.error(print_msg(path1_base, "RRRR  in do_copies()", path2_base)+"==="+str(files_copy))
     path_changes = False
-    files_copy_filename = lsl_file_base + file_suffix
     files_copy_files=[ f for f in files_copy if not f.endswith("/") ]
     if len(files_copy_files) > 0:
         logging.error(print_msg(path1_base, "RRRR  CASE A", path2_base))
@@ -226,9 +225,8 @@ def do_copies(path1_base,path2_base,files_copy,path1_now_updated,path2_now_updat
         os.remove(files_copy_filename)
     return(0, path_changes,path1_now_updated,path2_now_updated)
 
-def do_deletes(path_base,files_delete,lsl_file_base,file_suffix,switches):
+def do_deletes(path_base,files_delete,files_delete_filename,switches):
     path_changes = False
-    files_delete_filename = lsl_file_base + file_suffix
     files_delete_files=[ f for f in files_delete if not f.endswith("/") ]
     files_delete_dirs=[ f for f in files_delete if f.endswith("/") ]
     if len(files_delete_files) > 0:
@@ -410,23 +408,29 @@ def bidirSync():
                 logging.info(print_msg("Path2", "  --first-sync queue copy to Path1", key))
                 files_first_sync_copy_P2P1.append(key)
 
-        if len(files_first_sync_copy_P2P1) > 0:
-            files_first_sync_copy_P2P1_filename = lsl_file_base + "_files_first_sync_copy_P2P1"
-            with io.open(files_first_sync_copy_P2P1_filename, mode='wt', encoding='utf8') as outf:
-                for item in files_first_sync_copy_P2P1:
-                    if not item.endswith("/"):
-                        outf.write(item + "\n")
-            logging.info(print_msg("Path2", "  Do queued first-sync copies to", "Path1"))
-            if rclone_cmd('copy', path2_base, path1_base, files_file=files_first_sync_copy_P2P1_filename, options=switches+["--create-empty-src-dirs"]):
-                return RTN_CRITICAL
-            with io.open(files_first_sync_copy_P2P1_filename, mode='wt', encoding='utf8') as outf:
-                for item in files_first_sync_copy_P2P1:
-                    if item.endswith("/"):
-                        outf.write("+ "+ item + "\n")
-                    outf.write("- **\n")
-                logging.info(print_msg("Path2", "  Do queued dir copies to ", "Path1"))
-                if rclone_cmd('copy', path2_base, path1_base, filter_file=files_first_sync_copy_P2P1_filename, options=switches+["--create-empty-src-dirs"]):
-                    return RTN_CRITICAL
+        path1_now_updated = {}
+        path2_now_updated = {}
+        status, path1_changes,path2_now_updated,path1_now_updated=do_copies(path2_base,path1_base,files_first_sync_copy_P2P1,path2_now_updated,path1_now_updated,path2_now,files_first_sync_copy_P2P1_filename,switches)
+        if status == 1:
+            return path1_changes # error code
+        # path1_changes,path2_now_updated,path1_now_updated are currently unused
+#        if len(files_first_sync_copy_P2P1) > 0:
+#            files_first_sync_copy_P2P1_filename = lsl_file_base + "_files_first_sync_copy_P2P1"
+#            with io.open(files_first_sync_copy_P2P1_filename, mode='wt', encoding='utf8') as outf:
+#                for item in files_first_sync_copy_P2P1:
+#                    if not item.endswith("/"):
+#                        outf.write(item + "\n")
+#            logging.info(print_msg("Path2", "  Do queued first-sync copies to", "Path1"))
+#            if rclone_cmd('copy', path2_base, path1_base, files_file=files_first_sync_copy_P2P1_filename, options=switches+["--create-empty-src-dirs"]):
+#                return RTN_CRITICAL
+#            with io.open(files_first_sync_copy_P2P1_filename, mode='wt', encoding='utf8') as outf:
+#                for item in files_first_sync_copy_P2P1:
+#                    if item.endswith("/"):
+#                        outf.write("+ "+ item + "\n")
+#                    outf.write("- **\n")
+#                logging.info(print_msg("Path2", "  Do queued dir copies to ", "Path1"))
+#                if rclone_cmd('copy', path2_base, path1_base, filter_file=files_first_sync_copy_P2P1_filename, options=switches+["--create-empty-src-dirs"]):
+#                    return RTN_CRITICAL
             if not args.no_cleanup:
                 os.remove(files_first_sync_copy_P2P1_filename)
 
@@ -450,10 +454,12 @@ def bidirSync():
             shutil.copy2(path2_lsl_file_new, path2_lsl_file)
         else:
             logging.info(">>>>> --first-sync refreshing lsl files")
-            if rclone_lsl(path1_base, path1_lsl_file, filter_file=user_filter_file):
+#            if rclone_lsl(path1_base, path1_lsl_file, filter_file=user_filter_file):
+            if dump_path_listing(path1_base, path1_lsl_file, filter_file=user_filter_file):
                 return RTN_CRITICAL
 
-            if rclone_lsl(path2_base, path2_lsl_file, filter_file=user_filter_file):
+#            if rclone_lsl(path2_base, path2_lsl_file, filter_file=user_filter_file):
+            if dump_path_listing(path2_base, path2_lsl_file, user_filter_file):
                 return RTN_CRITICAL
 
         # success. We can finalize the change token
@@ -808,18 +814,18 @@ def bidirSync():
         path1_now_updated = {}
         path2_now_updated = {}
 
-        status, path1_changes,path2_now_updated,path1_now_updated=do_copies(path2_base,path1_base,files_copy_P2P1,path2_now_updated,path1_now_updated,path2_now,lsl_file_base,"_files_copy_P2P1",switches)
+        status, path1_changes,path2_now_updated,path1_now_updated=do_copies(path2_base,path1_base,files_copy_P2P1,path2_now_updated,path1_now_updated,path2_now,lsl_file_base+"_files_copy_P2P1",switches)
         if status == 1:
             return path1_changes # error code
-        status, path2_changes,path1_now_updated,path2_now_updated=do_copies(path1_base,path2_base,files_copy_P1P2,path1_now_updated,path2_now_updated,path1_now,lsl_file_base,"_files_copy_P1P2",switches)
+        status, path2_changes,path1_now_updated,path2_now_updated=do_copies(path1_base,path2_base,files_copy_P1P2,path1_now_updated,path2_now_updated,path1_now,lsl_file_base+"_files_copy_P1P2",switches)
         if status == 1:
             return path2_changes # error code
 
-        status, res=do_deletes(path1_base,files_delete_P1,lsl_file_base,"_files_delete_P1",switches)
+        status, res=do_deletes(path1_base,files_delete_P1,lsl_file_base+"_files_delete_P1",switches)
         if status == 1:
             return res
         path1_changes=path1_changes or res
-        status, res=do_deletes(path2_base,files_delete_P2,lsl_file_base,"_files_delete_P2",switches)
+        status, res=do_deletes(path2_base,files_delete_P2,lsl_file_base+"_files_delete_P2",switches)
         if status == 1:
             return res
         path2_changes=path2_changes or res
@@ -1952,6 +1958,13 @@ def override_filename(lsl_file):
 def override_filename_exists(lsl_file):
     return(os.path.exists(override_filename(lsl_file)))
 
+def dump_path_listing(path12, lsl_file, filter_file):
+    if rclone_lsl(path12, lsl_file, filter_file=user_filter_file):
+        return True
+    if rclone_lsd(path12, lsl_file, filter_file=user_filter_file, append=True):
+        return True
+    return False
+
 def get_and_load_lsl(path_text, lsl_file, path12=None):
     """
     Optionally call for an rclone lsl of the referenced path12, written to the lsl_file.
@@ -1965,9 +1978,11 @@ def get_and_load_lsl(path_text, lsl_file, path12=None):
         if override_filename_exists(lsl_file):
             shutil.move(override_filename(lsl_file),lsl_file)
         else:
-            if rclone_lsl(path12, lsl_file, filter_file=user_filter_file):
-                return RTN_ABORT, None
-            if rclone_lsd(path12, lsl_file, filter_file=user_filter_file, append=True):
+#            if rclone_lsl(path12, lsl_file, filter_file=user_filter_file):
+#                return RTN_ABORT, None
+#            if rclone_lsd(path12, lsl_file, filter_file=user_filter_file, append=True):
+#                return RTN_ABORT, None
+            if dump_path_listing(path12, lsl_file, user_filter_file):
                 return RTN_ABORT, None
     status, loaded_list = load_list(lsl_file)
     if status:
@@ -1990,27 +2005,6 @@ def incremental_get_and_load_lsl(path_text, change_token, lsl_file_cached, lsl_f
     if path12 is None:
         logging.error("incremental_get_and_load_lsls() called without path12")
         return RTN_CRITICAL, None, None, False, change_token
-
-#TODO remove these lines and do_folders
-#    global do_folders
-#    do_folders=True
-#    loaded_list = None
-#    status, change_token, changes_detected, cached_data, loaded_list = merge_gdrive_changes(change_token, path12, lsl_file_cached, lsl_file, filter_file=user_filter_file)
-#    logging.error("incremental_get_and_load_lsls(): merging complete WITH do_foldrs")
-#    if status != 0:
-#        return RTN_ABORT, None, None, False, change_token
-# <<<<<<<<<<<<<<<<<<<<< add mkdir() and rmdir() at the end of the program; 
-# <<<<<<<<<<<<<<<<<<<<< do incremental dirs in the app
-# <<<<<<<<<<<<<<<<<<<<< remove do_folders
-#<<<<<<<<<< do not remove a dir if there is a current "key" that is in it
-# <<<<<<<< if dir u/ needs to be removed:
-# 1. create the filter file with (all dirs to be removed can go in there):
-#+ u/**
-#- **
-# 2. run: rclone rmdirs <remote:> --filter-from <filter file>
-#    This will NOT remove files or dirs containing files. It will remove all empty dirs in the filter and any subdirs of those dirs (as long as they are empty)
-#<<<<<<<<<<<<<<<<
-
 
     loaded_list = None
     status, change_token, changes_detected, cached_data, loaded_list = merge_gdrive_changes(change_token, path12, lsl_file_cached, lsl_file, filter_file=user_filter_file)
@@ -2084,8 +2078,9 @@ if __name__ == '__main__':
                         help="Disable comparison of final LSL files (default is check-sync enabled).")
     parser.add_argument('--check-sync-only', action='store_true',
                         help="Only execute the comparison of LSL files from the last rclonesync run.")
-    parser.add_argument('-e', '--remove-empty-directories', action='store_true',
-                        help="Execute rclone rmdirs as a final cleanup step.")
+# no longer needed
+#    parser.add_argument('-e', '--remove-empty-directories', action='store_true',
+#                        help="Execute rclone rmdirs as a final cleanup step.")
     parser.add_argument('-f','--filters-file', default=None,
                         help="File containing rclone file/path filters (needed for Dropbox).")
     parser.add_argument('-r','--rclone', default="rclone",
@@ -2108,8 +2103,6 @@ if __name__ == '__main__':
                         help="Retain working files - useful for debug and testing.")
     parser.add_argument('--path1-changes-only', action='store_true',
                         help="Only check for changes in path1 and return.")
-    parser.add_argument('--create-empty-src-dirs', action='store_true',
-                        help="Instruct rclone to create empty dirs during sync and copy.")
     parser.add_argument('-V', '--version', action='version', version='%(prog)s ' + __version__,
                         help="Return rclonesync's version number and exit.")
     args = parser.parse_args()
@@ -2125,13 +2118,7 @@ if __name__ == '__main__':
     rclone       =  args.rclone
     dry_run      =  args.dry_run
     force        =  args.force
-    rmdirs       =  args.remove_empty_directories
-    if args.create_empty_src_dirs:
-        logging.error("STOP USING OPTION --create-empty-src-dirs!!!!!!!")
-        logging.error("STOP USING OPTION --create-empty-src-dirs!!!!!!!")
-        logging.error("STOP USING OPTION --create-empty-src-dirs!!!!!!!")
-        logging.error("STOP USING OPTION --create-empty-src-dirs!!!!!!!")
-        logging.error("STOP USING OPTION --create-empty-src-dirs!!!!!!!")
+    rmdirs       =  False #args.remove_empty_directories
 
     # Set up logging
     if not args.no_datetime_log:
