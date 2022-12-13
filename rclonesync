@@ -121,7 +121,7 @@ def get_latest_file_info_part2(path_base,files_copy_files,path1_now_updated,path
     for key in files_copy_files:
         if key in cached_data.keys():
             path2_now_updated[key]=cached_data[key]
-    return(path1_now_updated)
+    return(path2_now_updated)
 
 def get_dir_parents(s):
     l=[]
@@ -1794,10 +1794,10 @@ def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file
 
     if COMBINED_LSL:
         for d in added_files.keys():
-            logging.error("FILTER FOR depth "+str(d))
+            logging.error("RR FILTER FOR depth "+str(d))
             changes_made,new_data=fetch_file_info(path,new_data,added_files[d],False,d,ofile,filter_file,options)
         for d in added_dirs.keys():
-            logging.error("FILTER FOR depth "+str(d))
+            logging.error("RR FILTER FOR depth "+str(d))
             changes_made2,new_data=fetch_file_info(path,new_data,added_dirs[d],True,d,ofile,filter_file,options)
             changes_made=changes_made or changes_made2
 
