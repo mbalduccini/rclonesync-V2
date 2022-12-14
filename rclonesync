@@ -500,8 +500,11 @@ def bidirSync():
     path1_lsl_file_new = path1_lsl_file + '_NEW'
     if path1_incremental:
         status, path1_now, path1_prior, path1_may_have_changed, change_token = incremental_get_and_load_lsl("current Path1", change_token, path1_lsl_file, path1_lsl_file_new, path1_base)
-        logging.debug("**************SAME!!") if path1_now == path1_prior else logging.debug("***************DIFF!!!")
-        logging.debug("**************path1_may_have_changed="+str(path1_may_have_changed))
+        if status:
+            logging.debug("**************incremental_get_and_load_lsl() returned an error")
+        else:
+            logging.debug("**************SAME!!") if path1_now == path1_prior else logging.debug("***************DIFF!!!")
+            logging.debug("**************path1_may_have_changed="+str(path1_may_have_changed))
     else:
         status, path1_now = get_and_load_lsl("current Path1", path1_lsl_file_new, path1_base)
     if status:  return status
@@ -1604,10 +1607,10 @@ def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file
         return 1, orig_token, False, None, None
     remote_type_crypt=True if path!=path_raw else False
 
+    #changed=[]
+    changed_dict={}
+    page_token=token
     try:
-        #changed=[]
-        changed_dict={}
-        page_token=token
         while page_token is not None:
             response = service.changes().list(pageToken=page_token,spaces='drive',includeRemoved=True,pageSize=1000,fields="nextPageToken,newStartPageToken,changes(fileId,removed,file(id,name,trashed,mimeType,md5Checksum,parents))").execute()
             for change in response.get('changes'):
@@ -1655,7 +1658,7 @@ def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file
     changed=changed_dict.values()
     if len(changed)==0:
         return 0, token, False, None, None
-        
+
     # load the cached file
     logging.debug("loading prior file list")
     status, cached_data = get_and_load_lsl(path, lsl_file_cached)
@@ -1686,9 +1689,10 @@ def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file
 
         file_path=pathToStr(getPath(service, file_record))
         if file_path==None:
-            if file_record.get('trashed'):
-                logging.debug("PROBLEM: file "+file_name+" was moved to trash and we cannot find its parent. Disregarding it for now rather than aborting. Probably, we'll have a file left behind in the local filesystem")
-                continue
+# TODO figure out why we would behave differently for deleted files below. The only case in which pathToStr(getPath()) returns None seems to be a network issue, in which case it makes sense to abort and not leave the file there
+#            if file_record.get('trashed'):
+#                logging.debug("PROBLEM: file "+file_name+" was moved to trash and we cannot find its parent. Disregarding it for now rather than aborting. Probably, we'll have a file left behind in the local filesystem")
+#                continue
             return 1, orig_token, False, None, None
         logging.debug("pathToStr() returned: "+file_path)
         if file_path=="" or not file_path.startswith(remote_root): # we should drop this
