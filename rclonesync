@@ -1723,9 +1723,10 @@ def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file
                 file_path=new_file_path
             logging.debug("Decrypted path is "+file_path)
         logging.debug("Change entry to merge: "+file_path)
-        logging.error("MERGING "+file_path)
+        logging.error("RRR MERGING "+file_path)
         logging.error("RRRR ACTION="+file_action)
 
+        # This entire block is for applying the rclone filters. It is quite time-consuming for large sets of files. Consider applying the filters directly here instead of asking rclone to do it
         if file_action=="remove":
             file_path_adj=file_path+"/" if file_is_folder else file_path
             if file_path_adj in new_data:
@@ -1737,7 +1738,7 @@ def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file
         elif COMBINED_LSL:
             d=file_path.count("/")+1
             if file_is_folder:
-                logging.error("APPENDING "+file_path)
+                logging.error("RRR APPENDING "+file_path)
                 added_dirs.setdefault(d,[])
                 added_dirs[d].append(file_path+"/")
             else:
