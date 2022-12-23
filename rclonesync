@@ -216,7 +216,7 @@ def do_copies(path1_base,path2_base,files_copy,path1_now_updated,path2_now_updat
 #        # [PART 2] refresh the timestamp of path1_now[item] for every item in files_copy_files; put it back in path1_now[item]['orig_datetime']
 #        if not simple_timestamp_copy:
 #            path2_now_updated=get_latest_file_info_part2(path2_base,files_copy_dirs,path1_now_updated,path2_now_updated,path1_now)
-    if not args.no_cleanup:
+    if not args.no_cleanup and os.path.exists(files_copy_filename):
         os.remove(files_copy_filename)
     return(0, path_changes,path1_now_updated,path2_now_updated)
 
@@ -242,12 +242,7 @@ def do_deletes(path_base,files_delete,files_delete_filename,switches):
         # This will NOT remove files or dirs containing files. It will remove all empty dirs in the filter and any subdirs of those dirs (as long as they are empty)
         if rclone_cmd('rmdirs', path_base, filter_file=files_delete_filename, options=switches):
             return 1,RTN_CRITICAL
-    logging.error("REMOVE and 1==0!!!")
-    logging.error("REMOVE and 1==0!!!")
-    logging.error("REMOVE and 1==0!!!")
-    logging.error("REMOVE and 1==0!!!")
-    logging.error("REMOVE and 1==0!!!")
-    if not args.no_cleanup and 1==0:
+    if not args.no_cleanup and os.path.exists(files_delete_filename):
         os.remove(files_delete_filename)
     return(0,path_changes)
 
@@ -301,8 +296,8 @@ def bidirSync():
         change_token=token_fp.readline().rstrip()
         token_fp.close()
         new_change_token=gdrive_changes_now(path1_base)
-        logging.info(f"Stored token: "+str(change_token)+"; new token: "+str(new_change_token)+"; changed="+str(type(new_change_token)==int and new_change_token!=change_token))
-        if type(new_change_token)==int and new_change_token!=change_token:
+        logging.info(f"Stored token: "+str(change_token)+"; new token: "+str(new_change_token)+"; changed="+str(new_change_token.isnumeric() and new_change_token!=change_token))
+        if new_change_token.isnumeric() and new_change_token!=change_token:
             logging.warning(f"CHANGES DETECTED") # warning because the calling up must be able to see the result regardless of log level
         return 0
 
