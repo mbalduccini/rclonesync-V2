@@ -1218,7 +1218,7 @@ def googleapi_service(path):
             #except HttpError as error:
             except Exception as error:
                 # TODO(developer) - Handle errors from drive API.
-                logging.error(f'googleapi_service(): An error occurred: {error}')
+                logging.error('googleapi_service(): An error occurred: '+str(error))
                 logging.error(f'googleapi_service(): likely unable to connect to the authentication server. Is your device connected to the internet?')
                 return((None,None))
 
