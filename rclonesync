@@ -164,7 +164,9 @@ def do_copies(path1_base,path2_base,files_copy,path1_now_updated,path2_now_updat
         logging.info(print_msg(path1_base, "  Do queued copies to", path2_base))
         logging.error(print_msg(path1_base, "RRRR  Do queued copies to", path2_base))
         if rclone_cmd('copy', path1_base, path2_base, files_file=files_copy_filename, options=switches):
-            return 1, RTN_CRITICAL, 0, 0
+            # On copy errors, we just abort the process and allow the caller to restart it later
+            # return 1, RTN_CRITICAL, 0, 0
+            return 1, RTN_ABORT, 0, 0
         # [PART 2] refresh the timestamp of path1_now[item] for every item in files_copy_files; put it back in path1_now[item]['orig_datetime']
         if not simple_timestamp_copy:
             path2_now_updated=get_latest_file_info_part2(path2_base,files_copy_files,path1_now_updated,path2_now_updated,path1_now)
@@ -193,7 +195,9 @@ def do_copies(path1_base,path2_base,files_copy,path1_now_updated,path2_now_updat
 
 #        if mkdir_via_mkdir(path2_base,files_copy_dirs_empty_only,switches)
         if mkdir_via_copy(path1_base,path2_base,files_copy_dirs_empty_only,files_copy_filename,switches):
-            return 1, RTN_CRITICAL, 0, 0
+            # Just abort the process and allow the caller to restart it later
+            #return 1, RTN_CRITICAL, 0, 0
+            return 1, RTN_ABORT, 0, 0
 
         # [PART 2] refresh the timestamp of path1_now[item] for every item in files_copy_files; put it back in path1_now[item]['orig_datetime']
         if not simple_timestamp_copy:
@@ -231,7 +235,9 @@ def do_deletes(path_base,files_delete,files_delete_filename,switches):
                 outf.write(item + "\n")
         logging.info(print_msg("", "  Do queued deletes on", path_base))
         if rclone_cmd('delete', path_base, files_file=files_delete_filename, options=switches):
-            return 1,RTN_CRITICAL
+            # Just abort the process and allow the caller to restart it later
+            #return 1,RTN_CRITICAL
+            return 1,RTN_ABORT
     if len(files_delete_dirs) > 0:
         path_changes = True
         with io.open(files_delete_filename, mode='wt', encoding='utf8') as outf:
@@ -241,7 +247,9 @@ def do_deletes(path_base,files_delete,files_delete_filename,switches):
         logging.info(print_msg("", "  Do queued dir deletes on", path_base))
         # This will NOT remove files or dirs containing files. It will remove all empty dirs in the filter and any subdirs of those dirs (as long as they are empty)
         if rclone_cmd('rmdirs', path_base, filter_file=files_delete_filename, options=switches):
-            return 1,RTN_CRITICAL
+            # Just abort the process and allow the caller to restart it later
+            #return 1,RTN_CRITICAL
+            return 1,RTN_ABORT
     if not args.no_cleanup and os.path.exists(files_delete_filename):
         os.remove(files_delete_filename)
     return(0,path_changes)
@@ -763,6 +771,7 @@ def bidirSync():
                                 return RTN_ABORT
 
                         if rclone_cmd('moveto', path1_base + key, path1_base + new_key, options=switches):
+                            # TODO consider returning RTN_ABORT
                             return RTN_CRITICAL
                         path1_now[new_key]=path1_now[key]
                         path1_now[new_key]['moved-from']=key
@@ -774,6 +783,7 @@ def bidirSync():
                         new_key=add_suffix_to_fname(key,"_Path2")
                         logging.warning(print_msg("Path2", "  Renaming Path2 copy", path2_base + new_key))
                         if rclone_cmd('moveto', path2_base + key, path2_base + new_key, options=switches):
+                            # TODO consider returning RTN_ABORT
                             return RTN_CRITICAL
                         path2_now[new_key]=path2_now[key]
                         path2_now[new_key]['moved-from']=key
