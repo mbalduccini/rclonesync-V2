@@ -1966,8 +1966,10 @@ def override_filename_exists(lsl_file):
 
 def dump_path_listing(path12, lsl_file, filter_file):
     if rclone_lsl(path12, lsl_file, filter_file=user_filter_file):
+        logging.error("rclone lsl failed for "+path12+" with filter from "+user_filter_file)
         return True
     if rclone_lsd(path12, lsl_file, filter_file=user_filter_file, append=True):
+        logging.error("rclone lsd failed for "+path12+" with filter from "+user_filter_file)
         return True
     return False
 
