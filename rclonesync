@@ -596,6 +596,7 @@ def bidirSync():
     if status:  return status
     path2_prior_count = len(path2_prior)    # Save for later max deletes check
 
+    path2_lsl_file_new_BAD=False
     if using_override and DOUBLE_CHECK_PATH2:
         key_batch=[]
         for key in path2_prior:
@@ -609,40 +610,46 @@ def bidirSync():
             if key not in path2_prior:
                 key_batch.append(key)
         cached_data=getFileInfoBatch(key_batch,path2_base)
+        for key in key_batch:
+            # CASES:
+            #   1. file exists in path2_now but does not exist in key_batch
+            #      ACTION: remove file from path2_now
+            #   2. file does not exist in path2_now but exists in key_batch
+            #      ACTION: add file from key_batch to path2_now
+            #   3. file exists in path2_now and in key_batch but with different timestamps
+            #      ACTION: copy file info from key_batch to path2_now
+            # CASE 1
+            if key in path2_now and key not in key_batch:
+                logging.info(print_msg("Path2", "  File does not really exist, removing it from cached list", key))
+                logging.error(print_msg("RRR Path2", "  File does not really exist, removing it from cached list", key))
+                del path2_now[key]
+                path2_lsl_file_new_BAD=True
+            # CASE 2
+            elif key not in path2_now and key in key_batch:
+                logging.info(print_msg("Path2", "  File was not really deleted, fixing cached list with data on physical disk", str(cached_data[key])))
+                logging.error(print_msg("RRR Path2", "  File was not really deleted, fixing cached list with data on physical disk", str(cached_data[key])))
+                path2_now[key]=cached_data[key]
+                path2_lsl_file_new_BAD=True
+            # CASE 3
+            elif key in path2_now and key in key_batch and key_batch[key]['datetime'] != path2_now[key]['datetime']:
+                logging.error(print_msg("RRR Path2", "  File has different timestamp than the calling app told us. Fixing cached list with data on physical disk", str(cached_data[key])))
+                path2_now[key]=cached_data[key]
+                path2_lsl_file_new_BAD=True
 
-    path2_lsl_file_new_BAD=False
     path2_deltas = {}
     path2_deleted = 0
     path2_found_same = False
     for key in path2_prior:
         _newer=False; _older=False; _size=False; _deleted=False
         if key not in path2_now:
-            skip_key=False
-            if using_override and DOUBLE_CHECK_PATH2:
-                #new_data=getFileInfo(key,path2_base,user_filter_file)
-                #if new_data!=None:
-                if key in cached_data.keys():
-                    new_data=cached_data[key]
-                    logging.info(print_msg("Path2", "  File was NOT REALLY deleted, it's still in Path2. Ignoring", key))
-                    path2_now[key]=new_data
-                    path2_lsl_file_new_BAD=True
-                    skip_key=True
-            if not skip_key:
-                logging.info(print_msg("Path2", "  File was deleted", key))
-                logging.debug(key)
-                path2_deleted += 1
-                _deleted = True
+            logging.info(print_msg("Path2", "  File was deleted", key))
+            logging.error(print_msg("RRR Path2", "  File was deleted", key))
+            logging.debug(key)
+            path2_deleted += 1
+            _deleted = True
         # For directories, we can disregard cases in which the directory timestamp has been changed
         elif not key.endswith("/"):
             if path2_prior[key]['datetime'] != path2_now[key]['datetime']:
-                if using_override and DOUBLE_CHECK_PATH2:
-                    # if we are double-checking, we get the timestamp of the physical file
-                    # and we use that instead of what we received from the calling app
-                    #new_data=getFileInfo(key,path2_base,user_filter_file)
-                    #if new_data!=None and path2_now[key]['datetime']!=new_data['datetime']:
-                    if key in cached_data.keys() and path2_now[key]['datetime']!=cached_data[key]['datetime']:
-                        path2_now[key]=cached_data[key]
-                        path2_lsl_file_new_BAD=True
                 if path2_prior[key]['datetime'] < path2_now[key]['datetime']:
                     logging.info(print_msg("Path2", "  File is newer",key+" "+str(path2_prior[key]['datetime'])+" "+str(path2_now[key]['datetime'])))
                     _newer = True
@@ -659,23 +666,10 @@ def bidirSync():
         else:
             path2_found_same = True # Once we've found at least 1 unchanged file we know that not everything has changed, as with a DST time change
 
-    bad_keys=[]
     for key in path2_now:
         if key not in path2_prior:
-            skip_key=False
-            if using_override and DOUBLE_CHECK_PATH2:
-                #new_data=getFileInfo(key,path2_base,user_filter_file)
-                #if new_data==None:
-                if not key in cached_data.keys():
-                    logging.info(print_msg("Path2", "  File does not really exist. Ignoring", key))
-                    bad_keys.append(key)
-                    path2_lsl_file_new_BAD=True
-                    skip_key=True
-            if not skip_key:
-                logging.info(print_msg("Path2", "  File is new", key))
-                path2_deltas[key] = {'new':True, 'newer':False, 'older':False, 'size':False, 'deleted':False}
-    for key in bad_keys:
-        del path2_now[key]
+            logging.info(print_msg("Path2", "  File is new", key))
+            path2_deltas[key] = {'new':True, 'newer':False, 'older':False, 'size':False, 'deleted':False}
 
     path2_prior = None              # Free up the memory
 #    path2_now = None
