@@ -631,9 +631,9 @@ def bidirSync():
                 path2_now[key]=cached_data[key]
                 path2_lsl_file_new_BAD=True
             # CASE 3
-            elif key in path2_now and key in key_batch and cached_data[key]['datetime'] != path2_now[key]['datetime']:
-                logging.info(print_msg("RRR Path2", "  File has different timestamp than the calling app told us. Fixing cached list with data on physical disk", str(cached_data[key])))
-                logging.error("RRR Path2  File has different timestamp than the calling app told us. Fixing cached list with data on physical disk: "+ str(cached_data[key]))
+            elif not key.endswith("/") and key in path2_now and key in key_batch and cached_data[key]['datetime'] != path2_now[key]['datetime']:
+                logging.info(print_msg("RRR Path2", "  File has different timestamp than the calling app told us. Fixing cached list with data on physical disk", key+";"+str(path2_now[key])+";"+str(cached_data[key])))
+                logging.error("RRR Path2  File has different timestamp than the calling app told us. Fixing cached list with data on physical disk: "+ key+";"+str(path2_now[key])+";"+str(cached_data[key]))
                 path2_now[key]=cached_data[key]
                 path2_lsl_file_new_BAD=True
 
