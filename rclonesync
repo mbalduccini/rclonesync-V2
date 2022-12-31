@@ -121,6 +121,14 @@ def get_latest_file_info_part2(path_base,files_copy_files,path1_now_updated,path
     for key in files_copy_files:
         if key in cached_data.keys():
             path2_now_updated[key]=cached_data[key]
+        else:
+            logging.error("RRR ***BAD!!! we didn't get info back after copying "+key+"!!!")
+            logging.error("RRR files_copy_files="+str(files_copy_files))
+            logging.error("RRR path_base="+str(path_base))
+            global lsl_temp_filter
+            tempfile_XXX=lsl_temp_filter+"_TEMP2"
+            shutil.copy(tempfile_XXX, tempfile_XXX+"_bak")
+            logging.error("RRR filter backed up to "+tempfile_XXX+"_bak")
     return(path2_now_updated)
 
 def get_dir_parents(s):
@@ -643,6 +651,7 @@ def bidirSync():
                     # of the physical file happens to be identical to that in path2_prior
                     # Current Path2 version is older than prior sync.
                     logging.info(print_msg("Path2", "  File is OLDER", key))
+                    logging.error("RRR prior key="+str(path2_prior[key])+"; current key="+str(path2_now[key]))
                     _older = True
 
         if _newer or _older or _size or _deleted:
