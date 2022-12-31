@@ -619,19 +619,19 @@ def bidirSync():
             #   3. file exists in path2_now and in key_batch but with different timestamps
             #      ACTION: copy file info from key_batch to path2_now
             # CASE 1
-            if key in path2_now and key not in key_batch:
+            if key in path2_now and key not in cached_data[:
                 logging.info(print_msg("Path2", "  File does not really exist, removing it from cached list", key))
                 logging.error(print_msg("RRR Path2", "  File does not really exist, removing it from cached list", key))
                 del path2_now[key]
                 path2_lsl_file_new_BAD=True
             # CASE 2
-            elif key not in path2_now and key in key_batch:
+            elif key not in path2_now and key in cached_data[:
                 logging.info(print_msg("Path2", "  File was not really deleted, fixing cached list with data on physical disk", str(cached_data[key])))
                 logging.error(print_msg("RRR Path2", "  File was not really deleted, fixing cached list with data on physical disk", str(cached_data[key])))
                 path2_now[key]=cached_data[key]
                 path2_lsl_file_new_BAD=True
             # CASE 3
-            elif key in path2_now and key in key_batch and key_batch[key]['datetime'] != path2_now[key]['datetime']:
+            elif key in path2_now and key in key_batch and cached_data[[key]['datetime'] != path2_now[key]['datetime']:
                 logging.error(print_msg("RRR Path2", "  File has different timestamp than the calling app told us. Fixing cached list with data on physical disk", str(cached_data[key])))
                 path2_now[key]=cached_data[key]
                 path2_lsl_file_new_BAD=True
