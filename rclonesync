@@ -1190,8 +1190,9 @@ def googleapi_service(path):
         #creds = Credentials.from_authorized_user_file('token.json', SCOPES)
 
         c=configparser.ConfigParser()
-        with open(rcconfig,'r') as fp:
-            c.read_file(fp)
+        try:
+            with open(rcconfig,'r') as fp:
+                c.read_file(fp)
             if c[key]['type']=='crypt':
                 return(googleapi_service(c[key]['remote']))
             elif c[key]['type']!='drive':
@@ -1210,31 +1211,30 @@ def googleapi_service(path):
             logging.debug("***"+str(data))
             SCOPES = ['https://www.googleapis.com/auth/drive']
             creds = Credentials.from_authorized_user_info(data, SCOPES)
-            try:
-                # If there are no (valid) credentials available, let the user log in.
-                if not creds or not creds.valid:
-                    if creds and creds.expired and creds.refresh_token:
-                        creds.refresh(Request())
-                    else:
-                        logging.error("PROBLEM: googleapi_service() cannot create credentials with the info in "+rcconfig)
-                        return((None,None))
-#                   else:
-#                       flow = InstalledAppFlow.from_client_secrets_file(
-#                           'credentials.json', SCOPES)
-#                       creds = flow.run_local_server(port=0)
+            # If there are no (valid) credentials available, let the user log in.
+            if not creds or not creds.valid:
+                if creds and creds.expired and creds.refresh_token:
+                    creds.refresh(Request())
+                else:
+                    logging.error("PROBLEM: googleapi_service() cannot create credentials with the info in "+rcconfig)
+                    return((None,None))
+#               else:
+#                   flow = InstalledAppFlow.from_client_secrets_file(
+#                       'credentials.json', SCOPES)
+#                   creds = flow.run_local_server(port=0)
 
-#                # Save the credentials for the next run
-#                with open('token.json', 'w') as token:
-#                    token.write(creds.to_json())
+#            # Save the credentials for the next run
+#            with open('token.json', 'w') as token:
+#                token.write(creds.to_json())
 
-                # static_discovery=False required to run within app -- https://stackoverflow.com/questions/73275882/cannot-build-the-google-drive-api-service-in-an-app-bundled-with-pyinstaller
-                aux_service[key] = build('drive', 'v3', credentials=creds, static_discovery=False)
-            #except HttpError as error:
-            except Exception as error:
-                # TODO(developer) - Handle errors from drive API.
-                logging.error('googleapi_service(): An error occurred: '+str(error))
-                logging.error(f'googleapi_service(): likely unable to connect to the authentication server. Is your device connected to the internet?')
-                return((None,None))
+            # static_discovery=False required to run within app -- https://stackoverflow.com/questions/73275882/cannot-build-the-google-drive-api-service-in-an-app-bundled-with-pyinstaller
+            aux_service[key] = build('drive', 'v3', credentials=creds, static_discovery=False)
+        #except HttpError as error:
+        except Exception as error:
+            # TODO(developer) - Handle errors from drive API.
+            logging.error('googleapi_service(): An error occurred: '+str(error))
+            logging.error(f'googleapi_service(): likely unable to connect to the authentication server. Is your device connected to the internet?')
+            return((None,None))
 
     return((aux_service[key],path))
 
