@@ -621,7 +621,7 @@ def bidirSync():
             # CASE 1
             if key in path2_now and key not in cached_data:
                 logging.info(print_msg("Path2", "  File does not really exist, removing it from cached list", key))
-                logging.error("RRR Path2  File does not really exist, removing it from cached list"+key)
+                logging.error("RRR Path2  File does not really exist, removing it from cached list "+key)
                 del path2_now[key]
                 path2_lsl_file_new_BAD=True
             # CASE 2
