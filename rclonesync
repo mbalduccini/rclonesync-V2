@@ -626,8 +626,8 @@ def bidirSync():
                 path2_lsl_file_new_BAD=True
             # CASE 2
             elif key not in path2_now and key in cached_data:
-                logging.info(print_msg("Path2", "  File was not really deleted, fixing cached list with data on physical disk", str(cached_data[key])))
-                logging.error("RRR Path2  File was not really deleted, fixing cached list with data on physical disk: "+str(cached_data[key]))
+                logging.info(print_msg("Path2", "  File was not really deleted, fixing cached list with data on physical disk", key+";"+str(cached_data[key])))
+                logging.error("RRR Path2  File was not really deleted, fixing cached list with data on physical disk: "+ key+";"+str(cached_data[key]))
                 path2_now[key]=cached_data[key]
                 path2_lsl_file_new_BAD=True
             # CASE 3
@@ -1988,6 +1988,9 @@ def get_and_load_lsl(path_text, lsl_file, path12=None):
     """
     if path12 is not None:
         if override_filename_exists(lsl_file):
+            logging.info(print_msg("INFO", "Using lsl file from app: "+override_filename(lsl_file)))
+            logging.error(print_msg("RRR INFO", "Using lsl file from app: "+override_filename(lsl_file)))
+            shutil.copy(override_filename(lsl_file),override_filename(lsl_file)+"_BAK")
             shutil.move(override_filename(lsl_file),lsl_file)
         else:
 #            if rclone_lsl(path12, lsl_file, filter_file=user_filter_file):
