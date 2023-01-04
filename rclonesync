@@ -125,11 +125,11 @@ def get_latest_file_info_part2(path_base,files_copy_files,path1_now_updated,path
             path2_now_updated[key]=cached_data[key]
         elif not dry_run:
             logging.error("RRR ***BAD!!! we didn't get info back after copying "+key+"!!!")
-            logging.error("RRR path_base="+str(path_base))
             if already_output_file_list:
                 # Reduce redundant output
                 logging.error("RRR files_copy_files already logged and backed up; see earlier log messages")
             else:
+                logging.error("RRR path_base="+str(path_base))
                 logging.error("RRR files_copy_files="+str(files_copy_files))
                 global lsl_temp_filter
                 tempfile_XXX=lsl_temp_filter+"_TEMP2"
