@@ -112,6 +112,8 @@ def get_latest_file_info_part1(path_base,files_copy_files,path1_now_updated,path
 
 # [PART 2] refresh the timestamp of path1_now[item] for every item in files_copy_files; put it back in path1_now[item]['orig_datetime']
 def get_latest_file_info_part2(path_base,files_copy_files,path1_now_updated,path2_now_updated,path1_now):
+    already_output_file_list=False
+
     for key in files_copy_files:
         path2_now_updated[key]=path1_now_updated[key]
         #new_data=getFileInfo(key,path2_base,user_filter_file)
@@ -123,12 +125,17 @@ def get_latest_file_info_part2(path_base,files_copy_files,path1_now_updated,path
             path2_now_updated[key]=cached_data[key]
         else:
             logging.error("RRR ***BAD!!! we didn't get info back after copying "+key+"!!!")
-            logging.error("RRR files_copy_files="+str(files_copy_files))
             logging.error("RRR path_base="+str(path_base))
-            global lsl_temp_filter
-            tempfile_XXX=lsl_temp_filter+"_TEMP2"
-            shutil.copy(tempfile_XXX, tempfile_XXX+"_bak")
-            logging.error("RRR filter backed up to "+tempfile_XXX+"_bak")
+            if already_output_file_list:
+                # Reduce redundant output
+                logging.error("RRR files_copy_files already logged and backed up; see earlier log messages")
+            else:
+                logging.error("RRR files_copy_files="+str(files_copy_files))
+                global lsl_temp_filter
+                tempfile_XXX=lsl_temp_filter+"_TEMP2"
+                shutil.copy(tempfile_XXX, tempfile_XXX+"_bak")
+                logging.error("RRR filter backed up to "+tempfile_XXX+"_bak")
+                already_output_file_list=True
     return(path2_now_updated)
 
 def get_dir_parents(s):
