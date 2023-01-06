@@ -417,7 +417,7 @@ def bidirSync():
 
         files_first_sync_copy_P2P1 = []
         for key in path2_now:
-            if key not in path1_now or path1_now[key]['datetime'] < path2_now[key]['datetime']:
+            if key not in path1_now or (not key.endswith("/") and path1_now[key]['datetime'] < path2_now[key]['datetime']):
                 logging.info(print_msg("Path2", "  --first-sync queue copy to Path1", key))
                 files_first_sync_copy_P2P1.append(key)
 
