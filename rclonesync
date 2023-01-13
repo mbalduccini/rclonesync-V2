@@ -950,6 +950,10 @@ def bidirSync():
         token_fp.write(change_token+"\n")
         token_fp.close()
 
+    # Let the calling app know that we have consumed the local filesystem token, if it exists
+    if os.path.exists(new_token_filename(path2_lsl_file)):
+        shutil.move(new_token_filename(path2_lsl_file), cached_token_filename(path2_lsl_file))
+
     if not args.no_cleanup:
         if path1_may_have_changed: os.remove(path1_lsl_file_new)
         os.remove(path2_lsl_file_new)
@@ -1974,6 +1978,14 @@ def override_filename(lsl_file):
 
 def override_filename_exists(lsl_file):
     return(os.path.exists(override_filename(lsl_file)))
+
+# Only used for local filesystem (Path2)
+def cached_token_filename(lsl_file):
+    return(lsl_file+"_TOKEN")
+
+# Only used for local filesystem (Path2)
+def new_token_filename(lsl_file):
+    return(lsl_file+"_TOKEN_NEW")
 
 def dump_path_listing(path12, lsl_file, filter_file):
     if rclone_lsl(path12, lsl_file, filter_file=user_filter_file):
