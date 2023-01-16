@@ -1498,7 +1498,7 @@ def getFileInfoBatch(pnames,path):
             tf.write(f+"\n")
         tf.close()
         if rclone_lsl(path,tempfile,None,["--files-from",lsl_temp_filter]) == 1:
-            logging.debug(":::::::::: something went wrong in rclone_lsl("+pnames+")")
+            logging.debug("RRR :::::::::: something went wrong in rclone_lsl("+str(pnames)+")")
         status,e=load_list(tempfile)
         if status==1:
             return None
