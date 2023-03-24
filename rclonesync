@@ -1574,13 +1574,13 @@ def fetch_file_info(path,info,file_list,is_folders,maxdepth,ofile,filter_file,op
 
     if is_folders:
         if rclone_lsd(path,ofile,filter_file,options,lsl_temp_filter,maxdepth) == 1:
-            return 1, orig_token, False, None, None
+            return((None,info))
     else:
         if rclone_lsl(path,ofile,filter_file,options,lsl_temp_filter,maxdepth) == 1:
-            return 1, orig_token, False, None, None
+            return((None,info))
     status,e=load_list(ofile)
     if status==1:
-        return 1, orig_token, False, None, None
+        return((None,info))
     logging.debug("*****************")
     logging.debug(e)
     logging.debug("*****************")
@@ -1771,6 +1771,8 @@ def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file
             max_depth=file_path.count("/")+1
 
             changes_made,new_data=fetch_file_info(path,new_data,[file_path],file_is_folder,max_depth,ofile,filter_file,options)
+            if changes_made==None:
+                return 1, orig_token, False, None, None
 
 #            if file_is_folder:
 #                file_path+="/"
@@ -1816,9 +1818,13 @@ def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file
         for d in added_files.keys():
             logging.error("RR FILTER FOR depth "+str(d))
             changes_made,new_data=fetch_file_info(path,new_data,added_files[d],False,d,ofile,filter_file,options)
+            if changes_made==None:
+                return 1, orig_token, False, None, None
         for d in added_dirs.keys():
             logging.error("RR FILTER FOR depth "+str(d))
             changes_made2,new_data=fetch_file_info(path,new_data,added_dirs[d],True,d,ofile,filter_file,options)
+            if changes_made==None:
+                return 1, orig_token, False, None, None
             changes_made=changes_made or changes_made2
 
     if changes_made:
