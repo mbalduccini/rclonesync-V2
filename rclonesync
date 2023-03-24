@@ -1615,46 +1615,6 @@ def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file
             if changes_made==None:
                 return 1, orig_token, False, None, None
 
-#            if file_is_folder:
-#                file_path+="/"
-#
-#            tf=open(lsl_temp_filter,"w")
-#            # old, less efficient approach
-##            #tf.write("+ /"+dir_path+("/" if dir_path!="" else "")+"**\n")
-##            #tf.write("- **\n")
-##            tf.write("+ /"+dir_path+("/" if dir_path!="" else "")+"**\n")
-##            tf.write("- **\n")
-#            tf.write("+ "+file_path+"\n")
-#            tf.write("- **\n")
-#            tf.close()
-#
-#            if file_is_folder:
-#                if rclone_lsd(path,ofile,filter_file,options,lsl_temp_filter,max_depth) == 1:
-#                    return 1, orig_token, False, None, None
-#            else:
-#                # call rclone lsl with the cli path, but provide at the end of the cli --filter-from F1
-#                # old, less efficient approach <<< actually useful to prune the search
-#                if rclone_lsl(path,ofile,filter_file,options,lsl_temp_filter,max_depth) == 1:
-##                if rclone_lsl(path,ofile,filter_file,options,lsl_temp_filter) == 1:
-#                    return 1, orig_token, False, None, None
-#            status,e=load_list(ofile)
-#            if status==1:
-#                return 1, orig_token, False, None, None
-#            logging.debug("*****************")
-#            logging.debug(e)
-#            logging.debug("*****************")
-#            # in the output, look for P1
-#            # if not found, then it means that the file is filtered out
-##            cached_data[file_path]=e[next(iter(e))] # rclone lsl returns only the filename when applied to individual files
-#            logging.debug("file modified: "+file_path)
-#            if not file_path in e.keys():
-#                logging.debug("actually, file was filtered out: "+file_path)
-#                # a filter must have dropped the file
-#                continue
-#            logging.debug("***"+str(e[file_path]))
-#            new_data[file_path]=e[file_path]
-#            changes_made=True
-
     if COMBINED_LSL:
         for d in added_files.keys():
             logging.error("RR FILTER FOR depth "+str(d))
