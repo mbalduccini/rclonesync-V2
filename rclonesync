@@ -68,7 +68,7 @@ simple_timestamp_copy=False # True -> we use the timestamp of the source; False 
 DISREGARD_MICROSEC=True # Android app does not give us the ms/us info
 DOUBLE_CHECK_PATH2=True
 COMBINED_LSL=True # True to attempt and speed up merge_gdrive_changes_python() when there are many files
-USE_SIMPLE_FILTER_MATCHING=False #True # True to use simple filter matching, which uses my own interpreter of the rclone filter spec language
+USE_SIMPLE_FILTER_MATCHING=True # True to use simple filter matching, which uses my own interpreter of the rclone filter spec language
 
 
 ############################### FILTER-CHECK ###############################
@@ -76,7 +76,7 @@ USE_SIMPLE_FILTER_MATCHING=False #True # True to use simple filter matching, whi
 import re
 import sys
 
-FILTER_CHECK_DEBUG=True #False
+FILTER_CHECK_DEBUG=False
 FILTER_CHECK_DEBUG_REGEX=False
 
 # Set to True to append ** if a directory pattern does not already end with it
@@ -86,6 +86,8 @@ SINGLE_ASTERISK_in="\*([^*])"
 SINGLE_ASTERISK_out="[^/]*\\1"
 DOUBLE_ASTERISK_in="\*\*"
 DOUBLE_ASTERISK_out=".*"
+
+CACHED_FILTER_FILES={}
 
 # For rclone patterns, see https://rclone.org/filtering/.
 # Only '*' and '** are allowed
@@ -133,8 +135,8 @@ def match_re_patt(pathname,re_patt):
 # filter_lines: array of pairs
 #               Pair item 1 is '+' or '-'
 #               Pair item 2 is the compiled regex for a rclone pattern (https://rclone.org/filtering/). Only '*' and '** are allowed
-# Returns: True if pathname should ne included; False if it should be excluded
-def match(pathname,filter_lines):
+# Returns: True if pathname should be included; False if it should be excluded
+def is_pathname_accepted(pathname,filter_lines):
 	'''
 	Rclone commands are applied to path/file names not directories. 
 	The entire contents of a directory can be matched to a filter 
@@ -149,16 +151,20 @@ def match(pathname,filter_lines):
 	# Include by default
 	return(True)
 
-def match_from_filter_file(pathname,filter_file):
+def is_pathname_accepted_by_filter_file(pathname,filter_file):
 	if FILTER_CHECK_DEBUG: logging.error("RRR=== IN filter-check")
-	with open(filter_file,"r") as fp:
-		filter_lines=[line_to_tuple(l.strip(),False) for l in fp]
+	if filter_file in CACHED_FILTER_FILES:
+		filter_lines=CACHED_FILTER_FILES[filter_file]
+	else:
+		with open(filter_file,"r") as fp:
+			filter_lines=[line_to_tuple(l.strip(),False) for l in fp]
+		CACHED_FILTER_FILES[filter_file]=filter_lines
 	if FILTER_CHECK_DEBUG: logging.error("RRR"+str(filter_lines))
 	if FILTER_CHECK_DEBUG:
-		x=match(pathname,filter_lines)
+		x=is_pathname_accepted(pathname,filter_lines)
 		logging.error("RRR can-be-used: "+pathname+"="+str(x))
 		return(x)
-	return(match(pathname,filter_lines))
+	return(is_pathname_accepted(pathname,filter_lines))
 
 ############################################################################
 
@@ -441,37 +447,6 @@ def bidirSync():
     logging.info ("Command args: <{}>".format(args_string[:-2]))
 
 
-    # ***** Handle user_filter_file, if provided *****
-    if user_filter_file is not None:
-        logging.info("Using filters-file  <{}>".format(user_filter_file))
-
-        if not os.path.exists(user_filter_file):
-            logging.error("Specified filters-file file does not exist:  " + user_filter_file)
-            return RTN_CRITICAL
-
-        user_filter_file_MD5 = user_filter_file + "-MD5"
-
-        with io.open(user_filter_file, 'rb') as ifile:
-            current_file_hash = bytes(hashlib.md5(ifile.read()).hexdigest(), encoding='utf-8')
-
-        stored_file_hash = ''
-        if os.path.exists(user_filter_file_MD5):
-            with io.open(user_filter_file_MD5, mode="rb") as ifile:
-                stored_file_hash = ifile.read()
-        elif not first_sync:
-            logging.error("MD5 file not found for filters file <{}>.  Must run --first-sync.".format(user_filter_file))
-            return RTN_CRITICAL
-
-        if current_file_hash != stored_file_hash and not first_sync:
-            logging.error("Filters-file <{}> has chanaged (MD5 does not match).  Must run --first-sync.".format(user_filter_file))
-            return RTN_CRITICAL
-
-        if first_sync:
-            logging.info("Storing filters-file hash to <{}>".format(user_filter_file_MD5))
-            with io.open(user_filter_file_MD5, 'wb') as ofile:
-                ofile.write(current_file_hash)
-
-
     # ***** Set up --dry-run, and rclone --verbose and --log-format switches *****
     switches = []
     for _ in range(rc_verbose):
@@ -489,6 +464,37 @@ def bidirSync():
         path2_lsl_file  += '_DRYRUN'
     if args.no_datetime_log:
         switches.extend(['--log-format', '""'])
+
+
+    # ***** Handle user_filter_file, if provided *****
+    if user_filter_file is not None:
+        logging.info("Using filters-file  <{}>".format(user_filter_file))
+
+        if not os.path.exists(user_filter_file):
+            logging.error("Specified filters-file file does not exist:  " + user_filter_file)
+            return RTN_ABORT #RTN_CRITICAL
+
+        user_filter_file_MD5 = user_filter_file + "-MD5"
+
+        with io.open(user_filter_file, 'rb') as ifile:
+            current_file_hash = bytes(hashlib.md5(ifile.read()).hexdigest(), encoding='utf-8')
+
+        stored_file_hash = ''
+        if os.path.exists(user_filter_file_MD5):
+            with io.open(user_filter_file_MD5, mode="rb") as ifile:
+                stored_file_hash = ifile.read()
+        elif not first_sync:
+            logging.error("MD5 file not found for filters file <{}>.  Must run --first-sync.".format(user_filter_file))
+            return RTN_ABORT #RTN_CRITICAL
+
+        if current_file_hash != stored_file_hash and not first_sync:
+            logging.error("Filters-file <{}> has chanaged (MD5 does not match).  Must run --first-sync.".format(user_filter_file))
+            return RTN_ABORT #RTN_CRITICAL
+
+        if first_sync:
+            logging.info("Storing filters-file hash to <{}>".format(user_filter_file_MD5))
+            with io.open(user_filter_file_MD5, 'wb') as ofile:
+                ofile.write(current_file_hash)
 
 
     # ***** first_sync generate path1 and path2 file lists, and copy any unique path2 files to path1 ***** 
@@ -870,7 +876,7 @@ def bidirSync():
                         logging.warning(print_msg("Path1", "  Renaming Path1 copy", path1_base + new_key))
 
                         if path1_now == None:
-                            status, path1_now = load_list(path1_lsl_file)
+                            status, path1_now = load_list(path1_lsl_file, user_filter_file)
                             if status:
                                 logging.error(print_msg("ERROR", f"Failed loading {path_text} list file <{lsl_file}>"))
                                 return RTN_ABORT
@@ -955,7 +961,7 @@ def bidirSync():
                 shutil.copy2(path1_lsl_file_new, path1_lsl_file)
         else:
             if path1_now == None:
-                status, path1_now = load_list(path1_lsl_file)
+                status, path1_now = load_list(path1_lsl_file, user_filter_file)
                 if status:
                     logging.error(print_msg("ERROR", f"Failed loading {path_text} list file <{lsl_file}>"))
                     return RTN_ABORT
@@ -991,7 +997,7 @@ def bidirSync():
                 shutil.copy2(path2_lsl_file_new, path2_lsl_file)
         else:
             if path1_now == None:
-                status, path1_now = load_list(path1_lsl_file)
+                status, path1_now = load_list(path1_lsl_file, user_filter_file)
                 if status:
                     logging.error(print_msg("ERROR", f"Failed loading {path_text} list file <{lsl_file}>"))
                     return RTN_ABORT
@@ -1673,9 +1679,8 @@ def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file
                 file_path=new_file_path
             logging.debug("Decrypted path is "+file_path)
 
-        if USE_SIMPLE_FILTER_MATCHING and not match_from_filter_file(file_path,filter_file):
+        if USE_SIMPLE_FILTER_MATCHING and not is_pathname_accepted_by_filter_file(file_path,filter_file):
             logging.debug("Filtered out by simple filtered matching: "+file_path)
-            logging.error("RRR Filtered out by simple filtered matching: "+file_path)
             continue
 
         logging.debug("Change entry to merge: "+file_path)
@@ -1814,7 +1819,7 @@ def rclone_cmd_read_output(cmd, ofile, p1=None, p2=None, filter_file=None, files
 
 
 LINE_FORMAT = re.compile(r'\s*([0-9]+) ([\d\-]+) ([\d:]+).([\d]+) (.*)')
-def load_list(lslfile):
+def load_list(lslfile, filter_file=None):
     """
     Load the content of the lslfile into a dictionary.
     The key is the path to the file relative to the Path1/Path2 base.
@@ -1863,6 +1868,9 @@ def load_list(lslfile):
 #                    except OverflowError:
 #                        date_time = time.mktime((dt+timedelta(hours=1)).timetuple()) + float('.'+ microsec)
                     filename = out.group(5)
+                    if USE_SIMPLE_FILTER_MATCHING and filter_file!=None and not is_pathname_accepted_by_filter_file(filename,filter_file):
+                        logging.debug("load_list(): filtered out by simple filtered matching: "+filename)
+                        continue
                     if filename in d:
                         logging.warning (f"WARNING  Duplicate line in LSL file:   <{line[:-1]}>")
                         strtime = datetime.fromtimestamp(d[filename]['datetime']).strftime("%Y-%m-%d %H:%M:%S.%f")
@@ -1925,7 +1933,7 @@ def get_and_load_lsl(path_text, lsl_file, path12=None):
 #                return RTN_ABORT, None
             if dump_path_listing(path12, lsl_file, user_filter_file):
                 return RTN_ABORT, None
-    status, loaded_list = load_list(lsl_file)
+    status, loaded_list = load_list(lsl_file, user_filter_file)
     if status:
         logging.error(print_msg("ERROR", f"Failed loading {path_text} list file <{lsl_file}>"))
         return RTN_ABORT, None
@@ -1955,7 +1963,7 @@ def incremental_get_and_load_lsl(path_text, change_token, lsl_file_cached, lsl_f
 
     if changes_detected:
         if loaded_list==None:
-            status, loaded_list = load_list(lsl_file)
+            status, loaded_list = load_list(lsl_file, user_filter_file)
             if status:
                 logging.error(print_msg("ERROR", f"Failed loading {path_text} list file <{lsl_file}>"))
                 return RTN_ABORT, None, None, False, change_token
