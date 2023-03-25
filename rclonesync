@@ -152,6 +152,8 @@ def is_pathname_accepted(pathname,filter_lines):
 	return(True)
 
 def is_pathname_accepted_by_filter_file(pathname,filter_file):
+	if filter_file==None:
+		return(True)
 	if FILTER_CHECK_DEBUG: logging.error("RRR=== IN filter-check")
 	if filter_file in CACHED_FILTER_FILES:
 		filter_lines=CACHED_FILTER_FILES[filter_file]
