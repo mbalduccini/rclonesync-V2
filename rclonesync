@@ -68,6 +68,100 @@ simple_timestamp_copy=False # True -> we use the timestamp of the source; False 
 DISREGARD_MICROSEC=True # Android app does not give us the ms/us info
 DOUBLE_CHECK_PATH2=True
 COMBINED_LSL=True # True to attempt and speed up merge_gdrive_changes_python() when there are many files
+USE_SIMPLE_FILTER_MATCHING=False #True # True to use simple filter matching, which uses my own interpreter of the rclone filter spec language
+
+
+############################### FILTER-CHECK ###############################
+
+import re
+import sys
+
+FILTER_CHECK_DEBUG=True #False
+FILTER_CHECK_DEBUG_REGEX=False
+
+# Set to True to append ** if a directory pattern does not already end with it
+FORCE_STARSTAR_END=True
+
+SINGLE_ASTERISK_in="\*([^*])"
+SINGLE_ASTERISK_out="[^/]*\\1"
+DOUBLE_ASTERISK_in="\*\*"
+DOUBLE_ASTERISK_out=".*"
+
+# For rclone patterns, see https://rclone.org/filtering/.
+# Only '*' and '** are allowed
+def pattern_to_regex(patt):
+	if FORCE_STARSTAR_END and patt.endswith("/"):
+		patt=patt+"**"
+
+	# we could use re.escape() but we don't want to have "*" escaped!
+	#special_chars=[".","^","$","+","?","\\","|","(",")"]
+	special_chars=["."]
+	re_patt=patt
+	for c in special_chars:
+		re_patt=re_patt.replace(c,"\\"+c)
+	# If the filter pattern starts with a / then it 
+	# only matches at the top level of the directory tree, 
+	# relative to the root of the remote (not necessarily 
+	# the root of the drive). 
+	# If it does not start with / then it is matched 
+	# starting at the end of the path/file name but it 
+	# only matches a complete path element - it must match 
+	# from a / separator or the beginning of the path/file.
+	if FILTER_CHECK_DEBUG_REGEX: logging.error("RRR 0"+str(re_patt))
+	re_patt=re.sub(SINGLE_ASTERISK_in,SINGLE_ASTERISK_out,re_patt)
+	if FILTER_CHECK_DEBUG_REGEX: logging.error("RRR 1"+str(re_patt))
+	re_patt=re.sub(DOUBLE_ASTERISK_in,DOUBLE_ASTERISK_out,re_patt)
+	if FILTER_CHECK_DEBUG_REGEX: logging.error("RRR 2"+str(re_patt))
+	if re_patt.startswith("/"):
+		# ensure to match only at the top level
+		# ensure to match all the way to the end
+		re_patt="^"+re_patt+"$"
+		if FILTER_CHECK_DEBUG_REGEX: logging.error("RRR 3a"+str(re_patt))
+	else:
+		# ensure to match a complete path element
+		re_patt="^(("+re_patt+")|(.*/"+re_patt+"))$"
+		if FILTER_CHECK_DEBUG_REGEX: logging.error("RRR 3b"+str(re_patt))
+	return(re_patt)
+
+def line_to_tuple(l,ignore_case):
+	v=l.split(" ",1)
+	return(v[0],re.compile(pattern_to_regex(v[1]),flags=re.IGNORECASE if ignore_case else 0))
+
+def match_re_patt(pathname,re_patt):
+	return(re_patt.match(pathname)!=None)
+
+# filter_lines: array of pairs
+#               Pair item 1 is '+' or '-'
+#               Pair item 2 is the compiled regex for a rclone pattern (https://rclone.org/filtering/). Only '*' and '** are allowed
+# Returns: True if pathname should ne included; False if it should be excluded
+def match(pathname,filter_lines):
+	'''
+	Rclone commands are applied to path/file names not directories. 
+	The entire contents of a directory can be matched to a filter 
+	by the pattern directory/* or recursively by directory/**.
+	'''
+	if not pathname.startswith("/"):
+		pathname="/"+pathname
+	for (mode,re_patt) in filter_lines:
+		if match_re_patt(pathname,re_patt):
+			if FILTER_CHECK_DEBUG: logging.error("RRR match with"+str(re_patt));
+			return(mode=="+")
+	# Include by default
+	return(True)
+
+def match_from_filter_file(pathname,filter_file):
+	if FILTER_CHECK_DEBUG: logging.error("RRR=== IN filter-check")
+	with open(filter_file,"r") as fp:
+		filter_lines=[line_to_tuple(l.strip(),False) for l in fp]
+	if FILTER_CHECK_DEBUG: logging.error("RRR"+str(filter_lines))
+	if FILTER_CHECK_DEBUG:
+		x=match(pathname,filter_lines)
+		logging.error("RRR can-be-used: "+pathname+"="+str(x))
+		return(x)
+	return(match(pathname,filter_lines))
+
+############################################################################
+
 
 def add_suffix_to_fname(fname,suffix):
     dotpos=fname.rfind(".")
@@ -1578,6 +1672,12 @@ def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file
                 decrypt_cache[file_path]=new_file_path
                 file_path=new_file_path
             logging.debug("Decrypted path is "+file_path)
+
+        if USE_SIMPLE_FILTER_MATCHING and not match_from_filter_file(file_path,filter_file):
+            logging.debug("Filtered out by simple filtered matching: "+file_path)
+            logging.error("RRR Filtered out by simple filtered matching: "+file_path)
+            continue
+
         logging.debug("Change entry to merge: "+file_path)
         logging.error("RRR MERGING "+file_path)
         logging.error("RRRR ACTION="+file_action)
