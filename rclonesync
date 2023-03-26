@@ -249,6 +249,12 @@ def get_dir_parents(s):
         s=os.path.dirname(s)
     return(l)
 
+def escape_filter_chars(s):
+    special_rclone_chars=["*","?","[","]","!","{","}"]
+    for c in special_rclone_chars:
+        s=s.replace(c,"\\"+c)
+    return(s)
+
 def mkdir_via_mkdir(path_base,files_copy_dirs,switches):
         for item in files_copy_dirs:
             if rclone_cmd('mkdir', path_base + item, options=switches):
@@ -258,7 +264,7 @@ def mkdir_via_mkdir(path_base,files_copy_dirs,switches):
 def mkdir_via_copy(path1_base,path2_base,files_copy_dirs,files_copy_filename,switches):
     with io.open(files_copy_filename, mode='wt', encoding='utf8') as outf:
         for item in files_copy_dirs:
-            outf.write("+ " + item + "*\n")
+            outf.write("+ " + escape_filter_chars(item) + "*\n")
         outf.write("- **\n")
     return rclone_cmd('copy', path1_base, path2_base, filter_file=files_copy_filename, options=switches+["--create-empty-src-dirs"])
 
@@ -359,10 +365,13 @@ def do_deletes(path_base,files_delete,files_delete_filename,switches):
         path_changes = True
         with io.open(files_delete_filename, mode='wt', encoding='utf8') as outf:
             for item in files_delete_dirs:
-                outf.write("+ " + item + "**\n")
+                outf.write("+ " + escape_filter_chars(item) + "**\n")
             outf.write("- **\n")
         logging.info(print_msg("", "  Do queued dir deletes on", path_base))
         # This will NOT remove files or dirs containing files. It will remove all empty dirs in the filter and any subdirs of those dirs (as long as they are empty)
+        # NOTE: I considered using the files_file parameter (--files-from-raw)
+        #       but it didn't work for rmdirs in my experiments. It didn't
+        #       remove the folders
         if rclone_cmd('rmdirs', path_base, filter_file=files_delete_filename, options=switches):
             # Just abort the process and allow the caller to restart it later
             #return 1,RTN_CRITICAL
@@ -1220,7 +1229,7 @@ def pruneNonEmptyDirs(dirnames,path,options):
     for d in e.keys():
         tf=open(lsl_temp_filter,"w")
         for f in e[d]:
-            tf.write("+ "+f+"**\n") # we do want ** here to match complete branches under the dir
+            tf.write("+ "+escape_filter_chars(f)+"**\n") # we do want ** here to match complete branches under the dir
         tf.write("- **\n")
         tf.close()
         if rclone_lsf(path, tempfile, filter_file=lsl_temp_filter, options=options, max_depth=d) == 1:
@@ -1382,39 +1391,6 @@ def write_lsl(data,ofile):
 def order_and_write_lsl(data,ofile):
     write_lsl(collections.OrderedDict(sorted(data.items())),ofile)
 
-# TODO I believe this can be removed
-# TODO pass variable "switches" and pass it as options to rclone_lsl
-def getFileInfoWithFile(pname,path,filter_file):
-    global lsl_temp_filter
-    # write to a temp file F1 the lines:
-    # + pname
-    # - **
-
-    tf=open(lsl_temp_filter,"w")
-    # old, less efficient approach
-#    tf.write("+ /"+pname+"**\n")
-#    tf.write("- **\n")
-    tf.write("+ /"+pname+"\n")
-    tf.write("- **\n")
-    tf.close()
-    max_depth=pname.count("/")+1
-
-    tempfile=lsl_temp_filter+"_TEMP2"
-    ## call rclone lsl with the cli path, but provide at the end of the cli --filter-from F1
-    if rclone_lsl(path,tempfile,filter_file,None,lsl_temp_filter,max_depth) == 1:
-    # Attempt at improving on speed of the above
-    # Failed because it's important to use the filter_file and it's incompatible with explicit path
-    #if rclone_lsl(path+pname,tempfile) == 1: # TODO see if we need max_depth=1
-        logging.debug(":::::::::: something went wrong in rclone_lsl("+pname+")")
-    status,e=load_list(tempfile)
-    if status==1:
-        return None
-#    logging.debug("*****************")
-#    logging.debug(e)
-#    logging.debug("*****************")
-    if not pname in e.keys():
-        return None
-    return e[pname]
 
 # TODO pass variable "switches" and pass it as options to rclone_lsl
 def getFileInfo(pname,path):
@@ -1507,10 +1483,12 @@ def fetch_file_info(path,info,file_list,is_folders,maxdepth,ofile,filter_file,op
     global lsl_temp_filter
 
     changes_made=False
+
+    # TODO use files_file (aka --files-from) for files
     tf=open(lsl_temp_filter,"w")
     for file_path in file_list:
-        tf.write("+ "+file_path+("*" if is_folders else "")+"\n")
-        logging.error("R25 + "+file_path+("*" if is_folders else ""))
+        tf.write("+ "+escape_filter_chars(file_path)+("*" if is_folders else "")+"\n")
+        logging.error("R25 + "+escape_filter_chars(file_path)+("*" if is_folders else ""))
     logging.error("R25 - **")
     tf.write("- **\n")
     tf.close()
