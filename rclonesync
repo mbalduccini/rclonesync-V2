@@ -70,6 +70,8 @@ DOUBLE_CHECK_PATH2=True
 COMBINED_LSL=True # True to attempt and speed up merge_gdrive_changes_python() when there are many files
 USE_SIMPLE_FILTER_MATCHING=True # True to use simple filter matching, which uses my own interpreter of the rclone filter spec language
 
+# TODO cryptdecode separator. Change if rclone changes
+CRYPTDECODE_SEP=" \t "
 
 ############################### FILTER-CHECK ###############################
 
@@ -466,6 +468,8 @@ def bidirSync():
         switches.append("--dry-run")
         if os.path.exists(path1_lsl_file):
             shutil.copy(path1_lsl_file, path1_lsl_file + '_DRYRUN')
+        if os.path.exists(id_filename(path1_lsl_file)):
+            shutil.copy(id_filename(path1_lsl_file), id_filename(path1_lsl_file + '_DRYRUN'))
         path1_lsl_file += '_DRYRUN'
         if os.path.exists(path1_lsl_token):
             shutil.copy(path1_lsl_token, path1_lsl_token + '_DRYRUN')
@@ -582,6 +586,8 @@ def bidirSync():
 #            if rclone_lsl(path1_base, path1_lsl_file, filter_file=user_filter_file):
             if dump_path_listing(path1_base, path1_lsl_file, filter_file=user_filter_file):
                 return RTN_CRITICAL
+            status=create_id_list(path1_base, path1_lsl_file)
+            if status!=0:  return status
 
 #            if rclone_lsl(path2_base, path2_lsl_file, filter_file=user_filter_file):
             if dump_path_listing(path2_base, path2_lsl_file, user_filter_file):
@@ -970,12 +976,14 @@ def bidirSync():
         if len(files_copy_P2P1)==0 and len(files_delete_P1)==0:
             if path1_now != None and path1_may_have_changed: # otherwise, there is no new file and no changes
                 shutil.copy2(path1_lsl_file_new, path1_lsl_file)
+                shutil.copy2(id_filename(path1_lsl_file_new), id_filename(path1_lsl_file))
         else:
             if path1_now == None:
                 status, path1_now = load_list(path1_lsl_file, user_filter_file)
                 if status:
                     logging.error(print_msg("ERROR", f"Failed loading {path_text} list file <{lsl_file}>"))
                     return RTN_ABORT
+                (_,path1_now)=merge_id_list(path1_now,path1_lsl_file)
             for key in files_copy_P2P1:
                 if key in path2_now:
                     if 'moved-from' in path2_now[key]:
@@ -991,7 +999,7 @@ def bidirSync():
             for key in files_delete_P1:
                 logging.info("deleting from Path1 cache file "+key)
                 if key in path1_now: del path1_now[key]
-            order_and_write_lsl(path1_now,path1_lsl_file)
+            order_and_write_lsl_and_id(path1_now,path1_lsl_file)
 
         if len(files_copy_P1P2)==0 and len(files_delete_P2)==0:
             if path2_lsl_file_new_BAD:
@@ -1389,8 +1397,25 @@ def write_lsl(data,ofile):
             of.write(data[p]['size']+" "+data[p]['orig_datetime']+" "+p+"\n")
 
 def order_and_write_lsl(data,ofile):
-    write_lsl(collections.OrderedDict(sorted(data.items())),ofile)
+    ordered=collections.OrderedDict(sorted(data.items()))
+    write_lsl(ordered,ofile)
+    return(ordered)
 
+#
+# FORMAT:
+#   <id> <plaintext pathname>
+#
+def write_lsl_id(data,ofile):
+    with io.open(ofile, "wt", encoding='utf8') as of:
+        for p in data:
+            if 'id' in data[p]:
+                of.write(data[p]['id']+" "+p+"\n")
+
+def order_and_write_lsl_and_id(data,ofile):
+    ordered=collections.OrderedDict(sorted(data.items()))
+    write_lsl(ordered,ofile)
+    write_lsl_id(data,id_filename(ofile))
+    return(ordered)
 
 # TODO pass variable "switches" and pass it as options to rclone_lsl
 def getFileInfo(pname,path):
@@ -1445,6 +1470,36 @@ def getFileInfoBatch(pnames,path):
     logging.error("RR*****************")
     return(e)
 
+
+def getRootId(service):
+    root_info = service.files().get(fileId="root", fields='id, name, parents').execute()
+    return(root_info.get('id'))
+
+cachedIdFromPathname={}
+def getIdFromPathname(service,p):
+    if p.startswith("/"):
+        p=p[1:]
+
+    parts=p.split('/')
+
+    rootID=getRootId(service)
+
+    currPath=""
+    currID=rootID
+    for t in parts:
+        newPath=t if currPath=="" else currPath+"/"+t
+        if newPath in cachedIdFromPathname:
+            currID=cachedIdFromPathname[newPath]
+        else:
+            found = service.files().list(q="'"+currID+"' in parents and name='"+t+"'").execute()
+            if len(found.get('files'))==0:
+                return(None)
+            item=found.get('files')[0]
+            currID=item.get('id')
+            cachedIdFromPathname[newPath]=currID
+        currPath=newPath
+    return(currID)
+
 ID_cache={}
 def getPath(service, f):
     global ID_cache
@@ -1471,11 +1526,9 @@ def getPath(service, f):
             logging.info("message:  <{}>".format(e))
             return(None)
     path.reverse()
-#    print(path)
     return(path)
 
 def pathToStr(p):
-#    print(p)
     if p==None: return(None)
     return("/".join([ d['name'] for d in list(p)]))
 
@@ -1523,6 +1576,116 @@ def fetch_file_info(path,info,file_list,is_folders,maxdepth,ofile,filter_file,op
         changes_made=True
     return((changes_made,info))
 
+crypt_cache={}
+decrypt_cache={}
+def decrypt_rclone_path(file_path,path_remote,reverse=False):
+    global lsl_temp_crypt
+    global CRYPTDECODE_SEP
+    global crypt_cache,decrypt_cache
+
+    if reverse:
+        cache1=crypt_cache
+        cache2=decrypt_cache
+        opts=['--reverse']
+    else:
+        cache1=decrypt_cache
+        cache2=crypt_cache
+        opts=[]
+    if file_path in cache1:
+        file_path=cache1[file_path]
+    else:
+        
+        res=rclone_cmd_read_output("cryptdecode", lsl_temp_crypt, path_remote, file_path, options=opts)
+        if res==1:
+            return(None)
+        crypt_fp=open(lsl_temp_crypt,"rt")
+        l=crypt_fp.readline().rstrip()
+        crypt_fp.close()
+        p=l.index(CRYPTDECODE_SEP)
+        if p==-1:
+            return(None)
+        new_file_path=l[p+len(CRYPTDECODE_SEP):]
+        cache1[file_path]=new_file_path
+        cache2[new_file_path]=file_path
+        file_path=new_file_path
+    return(file_path)
+
+def is_remote_crypt(path):
+    (service,path_raw)=googleapi_service(path)
+    if service==None:
+        return False
+    return(path!=path_raw)
+
+def get_remote_root(path):
+    (service,path_raw)=googleapi_service(path)
+    if service==None:
+        return ""
+    remote_root=path_raw.split(":",1)[1]
+    if not remote_root.endswith("/"):
+        remote_root=remote_root+"/"
+    if remote_root=="/":
+        remote_root=""
+    return(remote_root)
+
+
+def id_filename(lsl_file):
+    return(lsl_file+"_ID")
+
+#
+# FORMAT:
+#   <id> <plaintext pathname>
+#
+def create_id_list_from_cached_data(path, cached_data, lsl_file):
+    remote_type_crypt=is_remote_crypt(path)
+    (service,_)=googleapi_service(path)
+    if service==None:
+        return False, []
+    path_remote=path.split(":",1)[0]+":"
+
+    invalid_paths=[]
+    for key in cached_data.keys():
+        fname=key
+        if fname.endswith("/"): # drop "/" to reflect the way Google encodes folder names
+            fname=fname[:-1]
+        #logging.error("fff "+fname)
+        if remote_type_crypt:
+            fname=decrypt_rclone_path(fname,path_remote,reverse=True)
+            #logging.error("ff2 "+fname)
+        #logging.error("ppp "+get_remote_root(path)+fname)
+        file_id=getIdFromPathname(service,get_remote_root(path)+fname)
+        if file_id==None:
+            invalid_paths.append(key)
+        else:
+            cached_data[key]['id']=file_id # TODO this is useless right now
+    write_lsl_id(cached_data,id_filename(lsl_file))
+    return True, invalid_paths
+
+def create_id_list(path, lsl_file):
+    status, cached_data = get_and_load_lsl("current Path1", lsl_file, path)
+    if status:  return status
+    status, _ = create_id_list_from_cached_data(path, cached_data)
+    if status==False:  return RTN_ABORT
+    return 0
+
+
+def merge_id_list(cached_data, lsl_file):
+    cached_id_list={}
+    if os.path.exists(id_filename(lsl_file)):
+        try:
+            with io.open(id_filename(lsl_file), mode='rt', encoding='utf8') as f:
+                for line in f:
+                    parts=line.rstrip('\r\n').split(" ",1)
+                    file_id=parts[0]
+                    file_name=parts[1]
+                    if not file_name in cached_data:
+                        continue
+                    cached_data[file_name]['id']=file_id
+                    cached_id_list[file_id]=file_name
+                    #logging.error("FFF "+file_name)
+                    #logging.error("--> "+str(cached_data[file_name]))
+        except Exception as e:
+            logging.error(f"Exception in merge_id_list loading <{id_filename(lsl_file)}>:\n  <{e}>\n")
+    return((cached_id_list,cached_data))
 
 def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file=None, options=None):
     """
@@ -1541,7 +1704,7 @@ def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file
     (service,path_raw)=googleapi_service(path)
     if service==None:
         return 1, orig_token, False, None, None
-    remote_type_crypt=True if path!=path_raw else False
+    remote_type_crypt=is_remote_crypt(path)
 
     #changed=[]
     changed_dict={}
@@ -1562,7 +1725,7 @@ def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file
                     logging.debug("MIMETYPE="+f.get('mimeType'))
                     logging.debug("MD5="+str(f.get('md5Checksum')))
 
-                    name=f.get('name')    
+                    name=f.get('name')
                     mime=f.get('mimeType')
                     is_folder=(mime=="application/vnd.google-apps.folder")
                     if not is_folder and mime.startswith("application/vnd.google-apps."):
@@ -1599,17 +1762,28 @@ def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file
     logging.debug("loading prior file list")
     status, cached_data = get_and_load_lsl(path, lsl_file_cached)
     logging.debug("done loading prior file list")
+    logging.error("HERE1") # DEBUG
     if status != 0:
         return 1, orig_token, False, None, None
+    (cached_id_list,cached_data)=merge_id_list(cached_data, lsl_file_cached)
 
-    remote_root=path_raw.split(":",1)[1]
-    if not remote_root.endswith("/"):
-        remote_root=remote_root+"/"
-    if remote_root=="/":
-        remote_root=""
+    remote_root=get_remote_root(path)
+    path_remote=path.split(":",1)[0]+":"
+
     changes_made=False
     new_data=cached_data.copy()
-    decrypt_cache={}
+
+#### TESTING
+    global do_create_id_list
+    if do_create_id_list:
+        logging.error("HERE1b") # DEBUG
+        status, invalid_paths=create_id_list_from_cached_data(path, cached_data, lsl_file_cached)
+        logging.error("HERE1c") # DEBUG
+        for p in invalid_paths:
+            del new_data[p]
+            changes_made=True
+#### TESTING
+
     for entry in changed:
         i=0
         file_id=entry[i]
@@ -1623,40 +1797,57 @@ def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file
         file_is_folder=entry[i]
         i+=1
 
+        # Find current pathname for file id
+        logging.error("HERE2 "+str(file_record)) # DEBUG
         file_path=pathToStr(getPath(service, file_record))
+        logging.error("HERE3 "+str(file_path)) # DEBUG
+
+        # Find prior pathname for file id
+        prior_path=None
+        if file_id in cached_id_list:
+            prior_path=cached_id_list[file_id]
+            if USE_SIMPLE_FILTER_MATCHING and not is_pathname_accepted_by_filter_file(prior_path,filter_file):
+                # do nothing. Prior file will be ignored
+                logging.debug("Prior file filtered out by simple filtered matching: "+prior_path)
+            else:
+                if prior_path.endswith("/"): # drop "/" to reflect the way Google encodes folder names
+                    prior_path=prior_path[:-1]
+                if remote_type_crypt:
+                    prior_path=remote_root+decrypt_rclone_path(prior_path,path_remote,reverse=True)
+                logging.error("HERE3b "+str(prior_path)) # DEBUG
+        # Check if file has been moved, which we reduce to delete + create
+        if prior_path!=None and file_path!=prior_path:
+            # File was moved from original location. Break it down in delete + create
+            moved_file=cached_id_list[file_id]
+            logging.error("HERE3c "+str(moved_file)) # DEBUG
+            file_path_adj=moved_file+"/" if file_is_folder else moved_file
+            if file_path_adj in new_data:
+                del new_data[file_path_adj]
+                changes_made=True
+                logging.debug("file deleted by move: "+file_path_adj)
+                logging.error("RRRR file deleted by move: "+file_path_adj)
         if file_path==None:
+            # File no longer in remote?
 # TODO figure out why we would behave differently for deleted files below. The only case in which pathToStr(getPath()) returns None seems to be a network issue, in which case it makes sense to abort and not leave the file there
 #            if file_record.get('trashed'):
 #                logging.debug("PROBLEM: file "+file_name+" was moved to trash and we cannot find its parent. Disregarding it for now rather than aborting. Probably, we'll have a file left behind in the local filesystem")
 #                continue
+            logging.error("HERE4!!!!!") # DEBUG
             return 1, orig_token, False, None, None
         logging.debug("pathToStr() returned: "+file_path)
-        if file_path=="" or not file_path.startswith(remote_root): # we should drop this
+        logging.error("HERE5 remote_root="+remote_root) # DEBUG
+        if file_path=="" or not file_path.startswith(remote_root): # file was moved out of our remote
+            logging.error("HERE6") # DEBUG
             continue
 
+        logging.error("HERE7 remote_root="+str(remote_root)) # DEBUG
         file_path=file_path[len(remote_root):] # remove the remote root prefix
         if remote_type_crypt:
-            path_remote=path.split(":",1)[0]+":"
             logging.debug("Converting "+file_path+" to decrypted name")
             logging.error("CONVERTING "+file_path)
-            if file_path in decrypt_cache:
-                file_path=decrypt_cache[file_path]
-            else:
-                global lsl_temp_crypt
-                res=rclone_cmd_read_output("cryptdecode", lsl_temp_crypt, path_remote, file_path)
-                if res==1:
-                    continue
-                # TODO cryptdecode separator. Change if rclone changes
-                sep=" \t "
-                crypt_fp=open(lsl_temp_crypt,"rt")
-                l=crypt_fp.readline().rstrip()
-                p=l.index(sep)
-                if p==-1:
-                    continue
-                new_file_path=l[p+len(sep):]
-                crypt_fp.close()
-                decrypt_cache[file_path]=new_file_path
-                file_path=new_file_path
+            file_path=decrypt_rclone_path(file_path,path_remote)
+            if file_path==None:
+                continue
             logging.debug("Decrypted path is "+file_path)
 
         if USE_SIMPLE_FILTER_MATCHING and not is_pathname_accepted_by_filter_file(file_path,filter_file):
@@ -1681,10 +1872,10 @@ def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file
             if file_is_folder:
                 logging.error("RRR APPENDING "+file_path)
                 added_dirs.setdefault(d,[])
-                added_dirs[d].append(file_path+"/")
+                added_dirs[d].append((file_id,file_path+"/"))
             else:
                 added_files.setdefault(d,[])
-                added_files[d].append(file_path)
+                added_files[d].append((file_id,file_path))
         else: # not COMBINED_LSL
             ## drop the filename from P1. Call the resulting path P2
             #dir_path=os.path.dirname(file_path)
@@ -1699,24 +1890,32 @@ def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file
             changes_made,new_data=fetch_file_info(path,new_data,[file_path],file_is_folder,max_depth,ofile,filter_file,options)
             if changes_made==None:
                 return 1, orig_token, False, None, None
+            new_data[file_path]['id']=file_id
 
     if COMBINED_LSL:
         for d in added_files.keys():
             logging.error("RR FILTER FOR depth "+str(d))
-            changes_made,new_data=fetch_file_info(path,new_data,added_files[d],False,d,ofile,filter_file,options)
-            if changes_made==None:
-                return 1, orig_token, False, None, None
-        for d in added_dirs.keys():
-            logging.error("RR FILTER FOR depth "+str(d))
-            changes_made2,new_data=fetch_file_info(path,new_data,added_dirs[d],True,d,ofile,filter_file,options)
-            if changes_made==None:
+            changes_made2,new_data=fetch_file_info(path,new_data,[ f for (_,f) in added_files[d]],False,d,ofile,filter_file,options)
+            if changes_made2==None:
                 return 1, orig_token, False, None, None
             changes_made=changes_made or changes_made2
+            # add the file IDs
+            for (i,f) in added_files[d]:
+                new_data[f]['id']=i
+        for d in added_dirs.keys():
+            logging.error("RR FILTER FOR depth "+str(d))
+            changes_made2,new_data=fetch_file_info(path,new_data,[ f for (_,f) in added_dirs[d]],True,d,ofile,filter_file,options)
+            if changes_made2==None:
+                return 1, orig_token, False, None, None
+            changes_made=changes_made or changes_made2
+            # add the file IDs
+            for (i,f) in added_dirs[d]:
+                new_data[f]['id']=i
 
     if changes_made:
         logging.debug("writing changes to "+ofile+"; contains data for "+file_path+": "+("yes" if file_path in new_data else "no"))
-        new_data=collections.OrderedDict(sorted(new_data.items()))
-        write_lsl(new_data,ofile) # store sorted dictionary
+        logging.error("RRRR writing changes to "+ofile+"; contains data for "+file_path+": "+("yes" if file_path in new_data else "no"))
+        new_data=order_and_write_lsl_and_id(new_data,ofile) # store sorted dictionary
     
     return 0, token, changes_made, cached_data, new_data
 
@@ -1947,6 +2146,7 @@ def incremental_get_and_load_lsl(path_text, change_token, lsl_file_cached, lsl_f
             if status:
                 logging.error(print_msg("ERROR", f"Failed loading {path_text} list file <{lsl_file}>"))
                 return RTN_ABORT, None, None, False, change_token
+            (_,loaded_list)=merge_id_list(loaded_list,lsl_file)
         if not first_sync and len(loaded_list) == 0:
             logging.error(print_msg("ERROR", f"Zero length in {path_text} list file <{lsl_file}>.  Cannot sync to an empty directory tree."))
             return RTN_CRITICAL, None, None, False, change_token
@@ -2024,6 +2224,8 @@ if __name__ == '__main__':
                         help="Enable rclone's verbosity levels (May be specified more than once for more details.  Also asserts --verbose.)")
     parser.add_argument('-d', '--dry-run', action='store_true',
                         help="Go thru the motions - No files are copied/deleted.  Also asserts --verbose.")
+    parser.add_argument('-i', '--create-id-list', action='store_true',
+                        help="Force the creation of the id list. For older installations. Normally the id list is created during first-sync.")
     parser.add_argument('-w', '--workdir', default=os.path.expanduser("~/.rclonesyncwd"),
                         help="Specified working dir - useful for testing.  Default is ~user/.rclonesyncwd.")
     parser.add_argument('--no-datetime-log', action='store_true',
@@ -2046,6 +2248,7 @@ if __name__ == '__main__':
     user_filter_file =  args.filters_file
     rclone       =  args.rclone
     dry_run      =  args.dry_run
+    do_create_id_list      =  args.create_id_list
     force        =  args.force
     rmdirs       =  False #args.remove_empty_directories
 
