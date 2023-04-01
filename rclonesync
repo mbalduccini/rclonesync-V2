@@ -72,6 +72,8 @@ USE_SIMPLE_FILTER_MATCHING=True # True to use simple filter matching, which uses
 
 # TODO cryptdecode separator. Change if rclone changes
 CRYPTDECODE_SEP=" \t "
+# TODO cryptdecode failure message. Change if rclone changes
+CRYPTDECODE_FAIL="Failed to decrypt"
 
 ############################### FILTER-CHECK ###############################
 
@@ -1475,14 +1477,22 @@ def getRootId(service):
     root_info = service.files().get(fileId="root", fields='id, name, parents').execute()
     return(root_info.get('id'))
 
+def escape_single_quote(s):
+    return(s.replace("'","\\'"))
+
+cachedRootID=None
 cachedIdFromPathname={}
 def getIdFromPathname(service,p):
+    global cachedRootID
+
     if p.startswith("/"):
         p=p[1:]
 
     parts=p.split('/')
 
-    rootID=getRootId(service)
+    if cachedRootID==None:
+        cachedRootID=getRootId(service)
+    rootID=cachedRootID
 
     currPath=""
     currID=rootID
@@ -1491,12 +1501,28 @@ def getIdFromPathname(service,p):
         if newPath in cachedIdFromPathname:
             currID=cachedIdFromPathname[newPath]
         else:
-            found = service.files().list(q="'"+currID+"' in parents and name='"+t+"'").execute()
-            if len(found.get('files'))==0:
-                return(None)
-            item=found.get('files')[0]
-            currID=item.get('id')
-            cachedIdFromPathname[newPath]=currID
+            # logging.error("RRR '"+currID+"' in parents and name='"+t+"'")
+            found=False
+            for n_tries in range(0,5):
+                try:
+                    found = service.files().list(q="'"+currID+"' in parents and name='"+escape_single_quote(t)+"'").execute()
+                    if len(found.get('files'))==0:
+                        return(None)
+                    item=found.get('files')[0]
+                    currID=item.get('id')
+                    cachedIdFromPathname[newPath]=currID
+                    found=True
+                    break
+                except:
+                    # https://stackoverflow.com/questions/15685335/google-drive-files-list-500-error
+                    logging.info("Exception while getting listing for q='"+currID+"' in parents and name='"+t+"'")
+                    logging.info("newPath="+newPath)
+                    logging.info("p="+p)
+                    logging.info("Try number "+str(n_tries+1))
+                    logging.info("Exception: "+str(sys.exc_info()))
+                    time.sleep( (2 ** n_tries) + (random.randint(0,1000)/1000))
+
+            if not found: return(False)
         currPath=newPath
     return(currID)
 
@@ -1581,6 +1607,7 @@ decrypt_cache={}
 def decrypt_rclone_path(file_path,path_remote,reverse=False):
     global lsl_temp_crypt
     global CRYPTDECODE_SEP
+    global CRYPTDECODE_FAIL
     global crypt_cache,decrypt_cache
 
     if reverse:
@@ -1605,6 +1632,8 @@ def decrypt_rclone_path(file_path,path_remote,reverse=False):
         if p==-1:
             return(None)
         new_file_path=l[p+len(CRYPTDECODE_SEP):]
+        if new_file_path==CRYPTDECODE_FAIL:
+            return(None)
         cache1[file_path]=new_file_path
         cache2[new_file_path]=file_path
         file_path=new_file_path
@@ -1642,21 +1671,63 @@ def create_id_list_from_cached_data(path, cached_data, lsl_file):
         return False, []
     path_remote=path.split(":",1)[0]+":"
 
+############ TESTING STUFF BELOW
+    if 1 == 0:
+        invalid_paths=[]
+#        i=0
+        #for key in cached_data.keys():
+        for i in range(0,len(list(cached_data.keys()))):
+            if i % 20 == 0:
+                logging.error("at i="+str(i))
+            key=list(cached_data.keys())[i]
+            fname=key
+            if fname.endswith("/"): # drop "/" to reflect the way Google encodes folder names
+                fname=fname[:-1]
+            # logging.error("RRR "+fname)
+            if remote_type_crypt:
+                fname=decrypt_rclone_path(fname,path_remote,reverse=True)
+                #logging.error("ff2 "+fname)
+    
+    #        magic_val="__NOT-REPLICATED/CRYPTED SJU Vault/ooc8uuchaahdrgds0k859br538/42k66mj3kmdi358lno4ojsqbok/tr07n1f0aguegkcrh98smse2a4/oppa7ju52cdl450b1iocnolap6p4i4dqnpo5bq7apo0srikecobhhkrn48f5cm4bct8bd39f3n97j0sg7jg038t4h88d8ii3h0f1qr311tbtvca0hph16uvos74l7nvs3cq5eoj6aaf8df50ccaurq308k"
+    #        if get_remote_root(path)+fname!=magic_val:
+    #            continue
+            file_id=getIdFromPathname(service,get_remote_root(path)+fname)
+            if file_id==False:
+                return False, []
+            if file_id==None:
+                invalid_paths.append(key)
+            else:
+                cached_data[key]['id']=file_id # TODO this is useless right now
+    #        if get_remote_root(path)+fname==magic_val:
+    #            return False, []
+        return False, []
+######## TESTING
+
+
+################ GOOD STUFF BELOW
     invalid_paths=[]
+    i=0
     for key in cached_data.keys():
+        if i % 20 == 0:
+            logging.error("at i="+str(i))
+        i+=1
         fname=key
         if fname.endswith("/"): # drop "/" to reflect the way Google encodes folder names
             fname=fname[:-1]
-        #logging.error("fff "+fname)
+        # logging.error("RRR "+fname)
         if remote_type_crypt:
             fname=decrypt_rclone_path(fname,path_remote,reverse=True)
             #logging.error("ff2 "+fname)
+
         #logging.error("ppp "+get_remote_root(path)+fname)
         file_id=getIdFromPathname(service,get_remote_root(path)+fname)
+        if file_id==False:
+            return False, []
         if file_id==None:
             invalid_paths.append(key)
         else:
             cached_data[key]['id']=file_id # TODO this is useless right now
+
     write_lsl_id(cached_data,id_filename(lsl_file))
     return True, invalid_paths
 
@@ -1681,8 +1752,8 @@ def merge_id_list(cached_data, lsl_file):
                         continue
                     cached_data[file_name]['id']=file_id
                     cached_id_list[file_id]=file_name
-                    #logging.error("FFF "+file_name)
-                    #logging.error("--> "+str(cached_data[file_name]))
+                    #logging.error("RRR "+file_name)
+                    #logging.error("RRR --> "+str(cached_data[file_name]))
         except Exception as e:
             logging.error(f"Exception in merge_id_list loading <{id_filename(lsl_file)}>:\n  <{e}>\n")
     return((cached_id_list,cached_data))
@@ -1778,6 +1849,7 @@ def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file
     if do_create_id_list:
         logging.error("HERE1b") # DEBUG
         status, invalid_paths=create_id_list_from_cached_data(path, cached_data, lsl_file_cached)
+        if status==False: return 1, orig_token, False, None, None
         logging.error("HERE1c") # DEBUG
         for p in invalid_paths:
             del new_data[p]
