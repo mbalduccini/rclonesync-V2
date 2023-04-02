@@ -34,6 +34,7 @@ import inspect                                      # For getting the line numbe
 import collections                                  # For dictionary sorting.
 import hashlib                                      # For checking if the filter file changed and force --first_sync.
 import signal                                       # For keyboard interrupt handler
+import random
 
 # pip install google-api-python-client
 # pip install google_auth_oauthlib
@@ -1782,7 +1783,7 @@ def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file
     page_token=token
     try:
         while page_token is not None:
-            response = service.changes().list(pageToken=page_token,spaces='drive',includeRemoved=True,pageSize=1000,fields="nextPageToken,newStartPageToken,changes(fileId,removed,file(id,name,trashed,mimeType,md5Checksum,parents))").execute()
+            response = service.changes().list(pageToken=page_token,spaces='drive',restrictToMyDrive=True,includeRemoved=True,pageSize=1000,fields="nextPageToken,newStartPageToken,changes(fileId,removed,file(id,name,trashed,mimeType,md5Checksum,parents))").execute()
             for change in response.get('changes'):
                 # Process change
                 logging.debug('Change found for file: '+change.get('fileId')+'; removed='+str(change.get('removed')))
@@ -1973,7 +1974,8 @@ def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file
             changes_made=changes_made or changes_made2
             # add the file IDs
             for (i,f) in added_files[d]:
-                new_data[f]['id']=i
+                if f in new_data: # it may have been filtered out by fetch_file_info()
+                    new_data[f]['id']=i
         for d in added_dirs.keys():
             logging.error("RR FILTER FOR depth "+str(d))
             changes_made2,new_data=fetch_file_info(path,new_data,[ f for (_,f) in added_dirs[d]],True,d,ofile,filter_file,options)
@@ -1982,7 +1984,8 @@ def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file
             changes_made=changes_made or changes_made2
             # add the file IDs
             for (i,f) in added_dirs[d]:
-                new_data[f]['id']=i
+                if f in new_data: # it may have been filtered out by fetch_file_info()
+                    new_data[f]['id']=i
 
     if changes_made:
         logging.debug("writing changes to "+ofile+"; contains data for "+file_path+": "+("yes" if file_path in new_data else "no"))
