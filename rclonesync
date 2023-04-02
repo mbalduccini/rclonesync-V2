@@ -1670,47 +1670,15 @@ def create_id_list_from_cached_data(path, cached_data, lsl_file):
     (service,_)=googleapi_service(path)
     if service==None:
         return False, []
+
     path_remote=path.split(":",1)[0]+":"
 
-############ TESTING STUFF BELOW
-    if 1 == 0:
-        invalid_paths=[]
-#        i=0
-        #for key in cached_data.keys():
-        for i in range(0,len(list(cached_data.keys()))):
-            if i % 20 == 0:
-                logging.error("at i="+str(i))
-            key=list(cached_data.keys())[i]
-            fname=key
-            if fname.endswith("/"): # drop "/" to reflect the way Google encodes folder names
-                fname=fname[:-1]
-            # logging.error("RRR "+fname)
-            if remote_type_crypt:
-                fname=decrypt_rclone_path(fname,path_remote,reverse=True)
-                #logging.error("ff2 "+fname)
-    
-    #        magic_val="__NOT-REPLICATED/CRYPTED SJU Vault/ooc8uuchaahdrgds0k859br538/42k66mj3kmdi358lno4ojsqbok/tr07n1f0aguegkcrh98smse2a4/oppa7ju52cdl450b1iocnolap6p4i4dqnpo5bq7apo0srikecobhhkrn48f5cm4bct8bd39f3n97j0sg7jg038t4h88d8ii3h0f1qr311tbtvca0hph16uvos74l7nvs3cq5eoj6aaf8df50ccaurq308k"
-    #        if get_remote_root(path)+fname!=magic_val:
-    #            continue
-            file_id=getIdFromPathname(service,get_remote_root(path)+fname)
-            if file_id==False:
-                return False, []
-            if file_id==None:
-                invalid_paths.append(key)
-            else:
-                cached_data[key]['id']=file_id # TODO this is useless right now
-    #        if get_remote_root(path)+fname==magic_val:
-    #            return False, []
-        return False, []
-######## TESTING
-
-
-################ GOOD STUFF BELOW
     invalid_paths=[]
     i=0
     for key in cached_data.keys():
         if i % 20 == 0:
-            logging.error("at i="+str(i))
+            logging.error("RRR at i="+str(i))
+            logging.debug("at i="+str(i))
         i+=1
         fname=key
         if fname.endswith("/"): # drop "/" to reflect the way Google encodes folder names
@@ -1766,6 +1734,7 @@ def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file
     options is a list of switches passed to rclone (not currently used)
     """
     global lsl_temp_filter
+    global do_create_id_list
 
     added_files={}
     added_dirs={}
@@ -1845,8 +1814,6 @@ def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file
     changes_made=False
     new_data=cached_data.copy()
 
-#### TESTING
-    global do_create_id_list
     if do_create_id_list:
         logging.error("HERE1b") # DEBUG
         status, invalid_paths=create_id_list_from_cached_data(path, cached_data, lsl_file_cached)
@@ -1855,7 +1822,6 @@ def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file
         for p in invalid_paths:
             del new_data[p]
             changes_made=True
-#### TESTING
 
     for entry in changed:
         i=0
