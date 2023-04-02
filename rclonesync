@@ -1988,8 +1988,8 @@ def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file
                     new_data[f]['id']=i
 
     if changes_made:
-        logging.debug("writing changes to "+ofile+"; contains data for "+file_path+": "+("yes" if file_path in new_data else "no"))
-        logging.error("RRRR writing changes to "+ofile+"; contains data for "+file_path+": "+("yes" if file_path in new_data else "no"))
+        logging.debug("writing changes to "+ofile)
+        logging.error("RRRR writing changes to "+ofile)
         new_data=order_and_write_lsl_and_id(new_data,ofile) # store sorted dictionary
     
     return 0, token, changes_made, cached_data, new_data
