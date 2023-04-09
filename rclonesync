@@ -1567,18 +1567,29 @@ def fetch_file_info(path,info,file_list,is_folders,maxdepth,ofile,filter_file,op
     # TODO use files_file (aka --files-from) for files
     tf=open(lsl_temp_filter,"w")
     for file_path in file_list:
+        if USE_SIMPLE_FILTER_MATCHING and not is_pathname_accepted_by_filter_file(file_path,filter_file):
+            # file was filtered out
+            continue
         tf.write("+ "+escape_filter_chars(file_path)+("*" if is_folders else "")+"\n")
         logging.error("R25 + "+escape_filter_chars(file_path)+("*" if is_folders else ""))
     logging.error("R25 - **")
     tf.write("- **\n")
     tf.close()
 
-    if is_folders:
-        if rclone_lsd(path,ofile,filter_file,options,lsl_temp_filter,maxdepth) == 1:
-            return((None,info))
+    if USE_SIMPLE_FILTER_MATCHING:
+        if is_folders:
+            if rclone_lsd(path,ofile,None,options,lsl_temp_filter,maxdepth) == 1:
+                return((None,info))
+        else:
+            if rclone_lsl(path,ofile,None,options,lsl_temp_filter,maxdepth) == 1:
+                return((None,info))
     else:
-        if rclone_lsl(path,ofile,filter_file,options,lsl_temp_filter,maxdepth) == 1:
-            return((None,info))
+        if is_folders:
+            if rclone_lsd(path,ofile,filter_file,options,lsl_temp_filter,maxdepth) == 1:
+                return((None,info))
+        else:
+            if rclone_lsl(path,ofile,filter_file,options,lsl_temp_filter,maxdepth) == 1:
+                return((None,info))
     status,e=load_list(ofile)
     if status==1:
         return((None,info))
