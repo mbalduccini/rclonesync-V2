@@ -1664,8 +1664,8 @@ def get_remote_root(path):
     remote_root=path_raw.split(":",1)[1]
     if not remote_root.endswith("/"):
         remote_root=remote_root+"/"
-    if remote_root=="/":
-        remote_root=""
+    if remote_root.startswith("/"):
+        remote_root=remote_root[1:]
     return(remote_root)
 
 
@@ -1864,6 +1864,8 @@ def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file
                     prior_path=prior_path[:-1]
                 if remote_type_crypt:
                     prior_path=remote_root+decrypt_rclone_path(prior_path,path_remote,reverse=True)
+                else:
+                    prior_path=remote_root+prior_path
                 logging.error("HERE3b "+str(prior_path)) # DEBUG
         # Check if file has been moved, which we reduce to delete + create
         if prior_path!=None and file_path!=prior_path:
