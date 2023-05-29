@@ -1714,7 +1714,7 @@ def create_id_list_from_cached_data(path, cached_data, lsl_file):
 def create_id_list(path, lsl_file):
     status, cached_data = get_and_load_lsl("current Path1", lsl_file, path)
     if status:  return status
-    status, _ = create_id_list_from_cached_data(path, cached_data)
+    status, _ = create_id_list_from_cached_data(path, cached_data, lsl_file)
     if status==False:  return RTN_ABORT
     return 0
 
