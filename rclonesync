@@ -589,8 +589,16 @@ def bidirSync():
 #            if rclone_lsl(path1_base, path1_lsl_file, filter_file=user_filter_file):
             if dump_path_listing(path1_base, path1_lsl_file, filter_file=user_filter_file):
                 return RTN_CRITICAL
-            status=create_id_list(path1_base, path1_lsl_file)
-            if status!=0:  return status
+            # Because create_id_list() calls dump_path_listing(), we replace the next two lines
+            # with code that leverages the result of the previous call to dump_path_listing().
+            #status=create_id_list(path1_base, path1_lsl_file)
+            #if status!=0:  return status
+            status, cached_data = load_list(path1_lsl_file, user_filter_file)
+            if status:
+                logging.error(print_msg("ERROR", f"Failed loading current Path1 list file <{path1_lsl_file}>"))
+                return RTN_CRITICAL
+            status, _ = create_id_list_from_cached_data(path1_base, cached_data, path1_lsl_file)
+            if status==False:  return RTN_CRITICAL
 
 #            if rclone_lsl(path2_base, path2_lsl_file, filter_file=user_filter_file):
             if dump_path_listing(path2_base, path2_lsl_file, user_filter_file):
