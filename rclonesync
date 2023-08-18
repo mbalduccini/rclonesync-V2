@@ -1746,6 +1746,35 @@ def merge_id_list(cached_data, lsl_file):
             logging.error(f"Exception in merge_id_list loading <{id_filename(lsl_file)}>:\n  <{e}>\n")
     return((cached_id_list,cached_data))
 
+# OUTPUT: added_dirs, added_files, changes_made, new_data
+def update_newdate_or_caches(COMBINED_LSL,file_id,file_path,file_is_folder,path,ofile,filter_file,options,added_dirs,added_files,changes_made,new_data):
+    if COMBINED_LSL:
+        d=file_path.count("/")+1
+        if file_is_folder:
+            logging.error("RRR APPENDING "+file_path)
+            added_dirs.setdefault(d,[])
+            added_dirs[d].append((file_id,file_path+"/"))
+        else:
+            added_files.setdefault(d,[])
+            added_files[d].append((file_id,file_path))
+    else: # not COMBINED_LSL
+        ## drop the filename from P1. Call the resulting path P2
+        #dir_path=os.path.dirname(file_path)
+        ## write to a temp file F1 the lines:
+        ## + /....P2/**
+        ## - **
+
+        # old, less efficient approach <<< actually useful to prune the search
+        # max_depth together with the filter allow us to look at exactly max_depth
+        max_depth=file_path.count("/")+1
+
+        changes_made,new_data=fetch_file_info(path,new_data,[file_path],file_is_folder,max_depth,ofile,filter_file,options)
+        if changes_made==None:
+            return added_dirs, added_files, changes_made, new_data
+        new_data[file_path]['id']=file_id
+    return added_dirs, added_files, changes_made, new_data
+
+
 def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file=None, options=None):
     """
     Fetch an rclone LSL of the path and write it to ofile.
@@ -1877,16 +1906,23 @@ def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file
                     prior_path=remote_root+prior_path
                 logging.error("HERE3b "+str(prior_path)) # DEBUG
         # Check if file has been moved, which we reduce to delete + create
-        if prior_path!=None and file_path!=prior_path:
+        if prior_path!=None and file_path!=prior_path and file_action!="remove":
             # File was moved from original location. Break it down in delete + create
             moved_file=cached_id_list[file_id]
             logging.error("HERE3c "+str(moved_file)) # DEBUG
-            file_path_adj=moved_file+"/" if file_is_folder else moved_file
+            # No need to append "/". It is already there since we read the path from cache
+            #file_path_adj=moved_file+"/" if file_is_folder else moved_file
+            file_path_adj=moved_file
             if file_path_adj in new_data:
-                del new_data[file_path_adj]
-                changes_made=True
-                logging.debug("file deleted by move: "+file_path_adj)
-                logging.error("RRRR file deleted by move: "+file_path_adj)
+                if file_is_folder:
+                    # TODO *ASAP!!!* when a folder is renamed, Google does NOT send updates for the individual contained files! So (a) we need to figure out why the present branch is not taken but (b) BEFORE FIXING IT, we need to make sure we copy all the files over!!!
+                    logging.debug("pathname moved is a folder. Ignoring for now. "+file_path_adj)
+                    logging.error("RRRR pathname moved is a folder. Ignoring for now. "+file_path_adj) # DEBUG
+                else:
+                    del new_data[file_path_adj]
+                    changes_made=True
+                    logging.debug("file deleted by move: "+file_path_adj)
+                    logging.error("RRRR file deleted by move: "+file_path_adj)
         if file_path==None:
             # File no longer in remote?
 # TODO figure out why we would behave differently for deleted files below. The only case in which pathToStr(getPath()) returns None seems to be a network issue, in which case it makes sense to abort and not leave the file there
@@ -1919,7 +1955,7 @@ def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file
         logging.error("RRR MERGING "+file_path)
         logging.error("RRRR ACTION="+file_action)
 
-        # This entire block is for applying the rclone filters. It is quite time-consuming for large sets of files. Consider applying the filters directly here instead of asking rclone to do it
+        # TODO This entire block is for applying the rclone filters. It is quite time-consuming for large sets of files. Consider applying the filters directly here instead of asking rclone to do it
         if file_action=="remove":
             file_path_adj=file_path+"/" if file_is_folder else file_path
             if file_path_adj in new_data:
@@ -1927,31 +1963,10 @@ def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file
                 changes_made=True
                 logging.debug("file deleted: "+file_path_adj)
                 logging.error("RRRR file deleted: "+file_path_adj)
-#        else:
-        elif COMBINED_LSL:
-            d=file_path.count("/")+1
-            if file_is_folder:
-                logging.error("RRR APPENDING "+file_path)
-                added_dirs.setdefault(d,[])
-                added_dirs[d].append((file_id,file_path+"/"))
-            else:
-                added_files.setdefault(d,[])
-                added_files[d].append((file_id,file_path))
-        else: # not COMBINED_LSL
-            ## drop the filename from P1. Call the resulting path P2
-            #dir_path=os.path.dirname(file_path)
-            ## write to a temp file F1 the lines:
-            ## + /....P2/**
-            ## - **
-
-            # old, less efficient approach <<< actually useful to prune the search
-            # max_depth together with the filter allow us to look at exactly max_depth
-            max_depth=file_path.count("/")+1
-
-            changes_made,new_data=fetch_file_info(path,new_data,[file_path],file_is_folder,max_depth,ofile,filter_file,options)
+        else:
+            added_dirs, added_files, changes_made, new_data=update_newdate_or_caches(COMBINED_LSL,file_id,file_path,file_is_folder,path,ofile,filter_file,options,added_dirs,added_files,changes_made,new_data)
             if changes_made==None:
                 return 1, orig_token, False, None, None
-            new_data[file_path]['id']=file_id
 
     if COMBINED_LSL:
         for d in added_files.keys():
