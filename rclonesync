@@ -1684,7 +1684,7 @@ def id_filename(lsl_file):
 # FORMAT:
 #   <id> <plaintext pathname>
 #
-def create_id_list_from_cached_data(path, cached_data, lsl_file):
+def create_id_list_from_cached_data(path, cached_data, lsl_file, skip_write=False):
     remote_type_crypt=is_remote_crypt(path)
     (service,_)=googleapi_service(path)
     if service==None:
@@ -1716,7 +1716,8 @@ def create_id_list_from_cached_data(path, cached_data, lsl_file):
         else:
             cached_data[key]['id']=file_id # TODO this is useless right now
 
-    write_lsl_id(cached_data,id_filename(lsl_file))
+    if not skip_write:
+        write_lsl_id(cached_data,id_filename(lsl_file))
     return True, invalid_paths
 
 def create_id_list(path, lsl_file):
@@ -1774,6 +1775,65 @@ def update_newdate_or_caches(COMBINED_LSL,file_id,file_path,file_is_folder,path,
         new_data[file_path]['id']=file_id
     return added_dirs, added_files, changes_made, new_data
 
+def remove_root_and_decrypt_pathname_as_needed(file_path,remote_root,remote_type_crypt):
+        logging.error("HERE7 remote_root="+str(remote_root)) # DEBUG
+        file_path=file_path[len(remote_root):] # remove the remote root prefix
+        if remote_type_crypt:
+            logging.debug("Converting "+file_path+" to decrypted name")
+            logging.error("CONVERTING "+file_path)
+            file_path=decrypt_rclone_path(file_path,path_remote)
+            logging.debug("Decrypted path is "+str(file_path))
+        return file_path
+
+# Returns new_data
+def move_contained_objects(file_path,file_is_folder,moved_file,remote_root,remote_type_crypt,filter_file,cached_data,new_data):
+    if not file_is_folder:
+        return new_data
+
+    file_path=remove_root_and_decrypt_pathname_as_needed(file_path,remote_root,remote_type_crypt)
+    if file_path==None:
+        return new_data
+    file_path_adj=file_path+"/" if file_is_folder else file_path # Could be simplified since we know file_path is a folder
+
+    logging.debug("pathname moved is a folder. Moving all contained objects. "+moved_file)
+    logging.error("RRRR pathname moved is a folder. Moving all contained objects. "+moved_file) # DEBUG
+    for p in cached_data.keys():
+        # Ensure the object is contained in moved_file
+        if p==moved_file or not p.startswith(moved_file):
+            continue
+
+        # One could in principle check p against the filter, but if it's in cached_data, it means that at least in the past it was not filtered out, and so it's ok to remove it from cached_data anyway I think
+#        if USE_SIMPLE_FILTER_MATCHING and not is_pathname_accepted_by_filter_file(p,filter_file):
+#            logging.debug("Filtered out by simple filtered matching: "+p)
+#        else:
+        logging.debug("Causing local removal of: "+p)
+        logging.error("RRRR Causing local removal of: "+p)
+        #logging.error("RRRR **************MUST STILL ENABLE THE LINE BELOW!!!")
+        del new_data[p]
+
+        if not file_path_adj.startswith(remote_root): # skip creation if file was moved out of our remote
+            continue
+
+        new_p=p.replace(moved_file,file_path_adj)
+        logging.error("RRRR p="+p)
+        logging.error("RRRR moved_file="+moved_file)
+        logging.error("RRRR p.startswith(moved_file)="+str(p.startswith(moved_file)))
+        logging.error("RRRR p.replace(moved_file,file_path_adj)="+new_p)
+        logging.error("RRRR p.replace(moved_file,file_path_adj) in new_data="+str(p.replace(moved_file,file_path_adj) in new_data))
+        if new_p not in new_data:
+            if USE_SIMPLE_FILTER_MATCHING and not is_pathname_accepted_by_filter_file(new_p,filter_file):
+                logging.debug("Filtered out by simple filtered matching: "+new_p)
+                continue
+            logging.debug("implementing move of contained pathname "+p+" to "+new_p)
+            logging.error("RRRR implementing move of contained pathname: "+p+" to "+new_p)
+            logging.error("RRRR p should be removed from new_data and p.replace(...) should be added to new_data")
+
+            logging.debug("Causing local creation of: "+p)
+            logging.error("RRRR Causing local creation of: "+p)
+            #logging.error("RRRR **************MUST STILL ENABLE THE LINE BELOW!!!")
+            new_data[new_p]=cached_data[p]
+
+    return new_data
 
 def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file=None, options=None):
     """
@@ -1897,6 +1957,7 @@ def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file
             if USE_SIMPLE_FILTER_MATCHING and not is_pathname_accepted_by_filter_file(prior_path,filter_file):
                 # do nothing. Prior file will be ignored
                 logging.debug("Prior file filtered out by simple filtered matching: "+prior_path)
+                prior_path=None
             else:
                 if prior_path.endswith("/"): # drop "/" to reflect the way Google encodes folder names
                     prior_path=prior_path[:-1]
@@ -1905,24 +1966,26 @@ def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file
                 else:
                     prior_path=remote_root+prior_path
                 logging.error("HERE3b "+str(prior_path)) # DEBUG
+        logging.error("RRRR PROBLEM: we are not handling the case in which a folder was moved from a filtered-out location to an in-filter location. See the todos around this debug message")
+        # Note: at this point, prior_path has no trailing "/" even if it is a folder
         # Check if file has been moved, which we reduce to delete + create
+        # TODO figure the following out: if the prior location of the file/folder was outside of the filters, then it was not in cached_id_list. Hence, prior_path is None, and thus we don't have a way to tell that it was moved. That is a BIG problem. Look at the code I created in MY-CURRENT-NOTES.txt. I think I should use that code for folders REGARDLESS whether it is a move OR prior_path==None. Performance shouldn't be too bad, since it's either a folder being moved, or a folder being created. In the former case, performance is what it is anyway. In the latter case, there is nothing inside and so the code I suggested will be very quick. Also see the TODO below "if moved_file in new_data", since it is linked to this one
         if prior_path!=None and file_path!=prior_path and file_action!="remove":
             # File was moved from original location. Break it down in delete + create
-            moved_file=cached_id_list[file_id]
+            moved_file=None
+            if file_id in cached_id_list:
+                moved_file=cached_id_list[file_id]
             logging.error("HERE3c "+str(moved_file)) # DEBUG
-            # No need to append "/". It is already there since we read the path from cache
+            # No need to append "/" to moved_file. It is already there since we read the path from cache
             #file_path_adj=moved_file+"/" if file_is_folder else moved_file
-            file_path_adj=moved_file
-            if file_path_adj in new_data:
-                if file_is_folder:
-                    # TODO *ASAP!!!* when a folder is renamed, Google does NOT send updates for the individual contained files! So (a) we need to figure out why the present branch is not taken but (b) BEFORE FIXING IT, we need to make sure we copy all the files over!!!
-                    logging.debug("pathname moved is a folder. Ignoring for now. "+file_path_adj)
-                    logging.error("RRRR pathname moved is a folder. Ignoring for now. "+file_path_adj) # DEBUG
-                else:
-                    del new_data[file_path_adj]
-                    changes_made=True
-                    logging.debug("file deleted by move: "+file_path_adj)
-                    logging.error("RRRR file deleted by move: "+file_path_adj)
+            if moved_file!=None and moved_file in new_data:
+                # TODO if it is a folder and "moved_file in new_data" is false, then I should use the code that I put in MY-CURRENT-NOTES.txt. See the TODO above "if prior_path!=None and file_path!=prior_path ...", because it is linked to this one.
+                # When a folder is moved, Google does NOT send updates for the individual contained files. So, we take care of them ourselves
+                new_data=move_contained_objects(file_path,file_is_folder,moved_file,remote_root,remote_type_crypt,filter_file,cached_data,new_data)
+                del new_data[moved_file]
+                changes_made=True
+                logging.debug("file deleted by move: "+moved_file)
+                logging.error("RRRR file deleted by move: "+moved_file)
         if file_path==None:
             # File no longer in remote?
 # TODO figure out why we would behave differently for deleted files below. The only case in which pathToStr(getPath()) returns None seems to be a network issue, in which case it makes sense to abort and not leave the file there
@@ -1937,15 +2000,9 @@ def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file
             logging.error("HERE6") # DEBUG
             continue
 
-        logging.error("HERE7 remote_root="+str(remote_root)) # DEBUG
-        file_path=file_path[len(remote_root):] # remove the remote root prefix
-        if remote_type_crypt:
-            logging.debug("Converting "+file_path+" to decrypted name")
-            logging.error("CONVERTING "+file_path)
-            file_path=decrypt_rclone_path(file_path,path_remote)
-            if file_path==None:
-                continue
-            logging.debug("Decrypted path is "+file_path)
+        file_path=remove_root_and_decrypt_pathname_as_needed(file_path,remote_root,remote_type_crypt)
+        if file_path==None:
+            continue
 
         if USE_SIMPLE_FILTER_MATCHING and not is_pathname_accepted_by_filter_file(file_path,filter_file):
             logging.debug("Filtered out by simple filtered matching: "+file_path)
@@ -2159,11 +2216,11 @@ def cached_token_filename(lsl_file):
 def new_token_filename(lsl_file):
     return(lsl_file+"_TOKEN_NEW")
 
-def dump_path_listing(path12, lsl_file, filter_file):
-    if rclone_lsl(path12, lsl_file, filter_file=user_filter_file):
+def dump_path_listing(path12, lsl_file, filter_file, extra_filter_file=None):
+    if rclone_lsl(path12, lsl_file, filter_file=user_filter_file, extra_filter_file=extra_filter_file):
         logging.error("rclone lsl failed for "+str(path12)+" with filter from "+str(user_filter_file))
         return True
-    if rclone_lsd(path12, lsl_file, filter_file=user_filter_file, append=True):
+    if rclone_lsd(path12, lsl_file, filter_file=user_filter_file, extra_filter_file=extra_filter_file, append=True):
         logging.error("rclone lsd failed for "+srt(path12)+" with filter from "+str(user_filter_file))
         return True
     return False
