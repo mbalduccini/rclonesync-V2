@@ -1775,7 +1775,7 @@ def update_newdate_or_caches(COMBINED_LSL,file_id,file_path,file_is_folder,path,
         new_data[file_path]['id']=file_id
     return added_dirs, added_files, changes_made, new_data
 
-def remove_root_and_decrypt_pathname_as_needed(file_path,remote_root,remote_type_crypt):
+def remove_root_and_decrypt_pathname_as_needed(file_path,remote_root,path_remote,remote_type_crypt):
         logging.error("HERE7 remote_root="+str(remote_root)) # DEBUG
         file_path=file_path[len(remote_root):] # remove the remote root prefix
         if remote_type_crypt:
@@ -1786,11 +1786,11 @@ def remove_root_and_decrypt_pathname_as_needed(file_path,remote_root,remote_type
         return file_path
 
 # Returns new_data
-def move_contained_objects(file_path,file_is_folder,moved_file,remote_root,remote_type_crypt,filter_file,cached_data,new_data):
+def move_contained_objects(file_path,file_is_folder,moved_file,remote_root,path_remote,remote_type_crypt,filter_file,cached_data,new_data):
     if not file_is_folder:
         return new_data
 
-    file_path=remove_root_and_decrypt_pathname_as_needed(file_path,remote_root,remote_type_crypt)
+    file_path=remove_root_and_decrypt_pathname_as_needed(file_path,remote_root,path_remote,remote_type_crypt)
     if file_path==None:
         return new_data
     file_path_adj=file_path+"/" if file_is_folder else file_path # Could be simplified since we know file_path is a folder
@@ -1981,7 +1981,7 @@ def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file
             if moved_file!=None and moved_file in new_data:
                 # TODO if it is a folder and "moved_file in new_data" is false, then I should use the code that I put in MY-CURRENT-NOTES.txt. See the TODO above "if prior_path!=None and file_path!=prior_path ...", because it is linked to this one.
                 # When a folder is moved, Google does NOT send updates for the individual contained files. So, we take care of them ourselves
-                new_data=move_contained_objects(file_path,file_is_folder,moved_file,remote_root,remote_type_crypt,filter_file,cached_data,new_data)
+                new_data=move_contained_objects(file_path,file_is_folder,moved_file,remote_root,path_remote,remote_type_crypt,filter_file,cached_data,new_data)
                 del new_data[moved_file]
                 changes_made=True
                 logging.debug("file deleted by move: "+moved_file)
@@ -2000,7 +2000,7 @@ def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file
             logging.error("HERE6") # DEBUG
             continue
 
-        file_path=remove_root_and_decrypt_pathname_as_needed(file_path,remote_root,remote_type_crypt)
+        file_path=remove_root_and_decrypt_pathname_as_needed(file_path,remote_root,path_remote,remote_type_crypt)
         if file_path==None:
             continue
 
