@@ -1809,7 +1809,8 @@ def move_contained_objects(file_path,file_is_folder,moved_file,remote_root,path_
         logging.debug("Causing local removal of: "+p)
         logging.error("RRRR Causing local removal of: "+p)
         #logging.error("RRRR **************MUST STILL ENABLE THE LINE BELOW!!!")
-        del new_data[p]
+        if p in new_data:
+            del new_data[p]
 
         if not file_path_adj.startswith(remote_root): # skip creation if file was moved out of our remote
             continue
