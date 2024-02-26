@@ -274,6 +274,13 @@ def mkdir_via_copy(path1_base,path2_base,files_copy_dirs,files_copy_filename,swi
     return rclone_cmd('copy', path1_base, path2_base, filter_file=files_copy_filename, options=switches+["--create-empty-src-dirs"])
 
 
+# TODO rclone aborted with error for filenames with ":" in them. I should find which other characters cause problems. I should also see if I need to escape them in other locations besides do_copies()
+def escape_rclone_special_chars(s):
+	special_chars=[ ":" ]
+	for c in special_chars:
+		s=s.replace(c,"\\"+c)
+	return s
+
 def do_copies(path1_base,path2_base,files_copy,path1_now_updated,path2_now_updated,path1_now,files_copy_filename,switches):
     global simple_timestamp_copy
 
@@ -285,7 +292,7 @@ def do_copies(path1_base,path2_base,files_copy,path1_now_updated,path2_now_updat
         path_changes = True
         with io.open(files_copy_filename, mode='wt', encoding='utf8') as outf:
             for item in files_copy_files:
-                outf.write(item + "\n")
+                outf.write(escape_rclone_special_chars(item) + "\n")
         # refresh the timestamp of path1_now[item] for every item in files_copy_files; put it back in path1_now[item]['orig_datetime']
         if not simple_timestamp_copy:
             path1_now_updated=get_latest_file_info_part1(path1_base,files_copy_files,path1_now_updated,path1_now)
