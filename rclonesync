@@ -392,6 +392,133 @@ def do_deletes(path_base,files_delete,files_delete_filename,switches):
         os.remove(files_delete_filename)
     return(0,path_changes)
 
+def do_first_sync(path1_base,path1_incremental,path2_base,switches,user_filter_file):
+    global path1_lsl_file, path2_lsl_file
+    global path1_lsl_token # TODO
+    global lsl_temp_filter
+    global lsl_temp_crypt
+    logging.info(">>>>> --first-sync copying any unique Path2 files to Path1")
+
+    if path1_incremental:
+        path1_lsl_token_new = path1_lsl_token + '_NEW'
+        token_fp=open(path1_lsl_token_new,"wt")
+        token_fp.write(gdrive_changes_now(path1_base)+"\n")
+        token_fp.close()
+
+    path1_lsl_file_new = path1_lsl_file + '_NEW'
+    status, path1_now = get_and_load_lsl("current Path1", path1_lsl_file_new, path1_base)
+    if status:  return status
+
+    path2_lsl_file_new = path2_lsl_file + '_NEW'
+    status, path2_now = get_and_load_lsl("current Path2", path2_lsl_file_new, path2_base)
+    if status:  return status
+
+    files_first_sync_copy_P2P1 = []
+    for key in path2_now:
+        if key not in path1_now or (not key.endswith("/") and path1_now[key]['datetime'] < path2_now[key]['datetime']):
+            logging.info(print_msg("Path2", "  --first-sync queue copy to Path1", key))
+            files_first_sync_copy_P2P1.append(key)
+
+    files_first_sync_copy_P2P1_filename = lsl_file_base + "_files_first_sync_copy_P2P1"
+    path1_now_updated = {}
+    path2_now_updated = {}
+    status, path1_changes,path2_now_updated,path1_now_updated=do_copies(path2_base,path1_base,files_first_sync_copy_P2P1,path2_now_updated,path1_now_updated,path2_now,files_first_sync_copy_P2P1_filename,switches)
+    if status == 1:
+        return path1_changes # error code
+    # path1_changes,path2_now_updated,path1_now_updated are currently unused
+#    if len(files_first_sync_copy_P2P1) > 0:
+#        files_first_sync_copy_P2P1_filename = lsl_file_base + "_files_first_sync_copy_P2P1"
+#        with io.open(files_first_sync_copy_P2P1_filename, mode='wt', encoding='utf8') as outf:
+#            for item in files_first_sync_copy_P2P1:
+#                if not item.endswith("/"):
+#                    outf.write(item + "\n")
+#        logging.info(print_msg("Path2", "  Do queued first-sync copies to", "Path1"))
+#        if rclone_cmd('copy', path2_base, path1_base, files_file=files_first_sync_copy_P2P1_filename, options=switches+["--create-empty-src-dirs"]):
+#            return RTN_CRITICAL
+#        with io.open(files_first_sync_copy_P2P1_filename, mode='wt', encoding='utf8') as outf:
+#            for item in files_first_sync_copy_P2P1:
+#                if item.endswith("/"):
+#                    outf.write("+ "+ item + "\n")
+#                outf.write("- **\n")
+#            logging.info(print_msg("Path2", "  Do queued dir copies to ", "Path1"))
+#            if rclone_cmd('copy', path2_base, path1_base, filter_file=files_first_sync_copy_P2P1_filename, options=switches+["--create-empty-src-dirs"]):
+#                return RTN_CRITICAL
+        if not args.no_cleanup:
+            os.remove(files_first_sync_copy_P2P1_filename)
+
+        
+    logging.info(">>>>> --first-sync synching Path1 to Path2")
+    # NOTE:  --min-size 0 added to block attempting to overwrite Google Doc files which have size -1 on Google Drive.  180729
+    if rclone_cmd('sync', path1_base, path2_base, filter_file=user_filter_file, options=switches+["--create-empty-src-dirs"] + ['--min-size', '0']):
+        return RTN_CRITICAL
+
+    if 1==0 and skip_refresh:
+        # skip_refresh currently disabled
+        # Copying over _NEW is WRONG. Suppose Path2 is initially empty and we copy over many files from Path1.
+        # Copying over _NEW of Path2 will cause the final lsl file to be empty, instead of listing all the
+        # files that have been copied to Path2!
+        # One option is to leverage the same code that is used in the (not first_sync) branch,
+        # however that won't work if some files have been skipped due to errors.
+        # Given that first-sync may entail large and long transfers, such errors are possible,
+        # and so I think it's much safer to just do a full refresh.
+        logging.info(">>>>> --first-sync skipping refreshing lsl files")
+        shutil.copy2(path1_lsl_file_new, path1_lsl_file)
+        shutil.copy2(path2_lsl_file_new, path2_lsl_file)
+    else:
+        logging.info(">>>>> --first-sync refreshing lsl files")
+#        if rclone_lsl(path1_base, path1_lsl_file, filter_file=user_filter_file):
+        if dump_path_listing(path1_base, path1_lsl_file, filter_file=user_filter_file):
+            return RTN_CRITICAL
+        # Because create_id_list() calls dump_path_listing(), we replace the next two lines
+        # with code that leverages the result of the previous call to dump_path_listing().
+        #status=create_id_list(path1_base, path1_lsl_file)
+        #if status!=0:  return status
+        status, cached_data = load_list(path1_lsl_file, user_filter_file)
+        if status:
+            logging.error(print_msg("ERROR", f"Failed loading current Path1 list file <{path1_lsl_file}>"))
+            return RTN_CRITICAL
+        status, _ = create_id_list_from_cached_data(path1_base, cached_data, path1_lsl_file)
+        if status==False:  return RTN_CRITICAL
+
+#        if rclone_lsl(path2_base, path2_lsl_file, filter_file=user_filter_file):
+        if dump_path_listing(path2_base, path2_lsl_file, user_filter_file):
+            return RTN_CRITICAL
+
+    # success. We can finalize the change token
+    if path1_incremental:
+        shutil.copy2(path1_lsl_token_new, path1_lsl_token)
+
+    if not args.no_cleanup:
+        os.remove(path1_lsl_file_new)
+        os.remove(path2_lsl_file_new)
+        if path1_incremental:
+            os.remove(path1_lsl_token_new)
+
+    return 0
+
+
+def get_check_files(loaded_lsl):
+    check_files = {}
+    for key in loaded_lsl:
+        if args.check_filename in key and "rclonesync/Test/" not in key:
+            check_files[key] = loaded_lsl[key]
+    return check_files
+
+def fetch_path1_lsl(path1_base,path1_incremental,path1_lsl_file,path1_lsl_file_new):
+    path1_prior = None
+    path1_prior_count = None
+    path1_may_have_changed=True
+    if path1_incremental:
+        status, path1_now, path1_prior, path1_may_have_changed, change_token = incremental_get_and_load_lsl("current Path1", change_token, path1_lsl_file, path1_lsl_file_new, path1_base)
+        if status:
+            logging.debug("**************incremental_get_and_load_lsl() returned an error")
+        else:
+            logging.debug("**************SAME!!") if path1_now == path1_prior else logging.debug("***************DIFF!!!")
+            logging.debug("**************path1_may_have_changed="+str(path1_may_have_changed))
+    else:
+        status, path1_now = get_and_load_lsl("current Path1", path1_lsl_file_new, path1_base)
+    return status, path1_now, path1_prior, path1_may_have_changed, change_token
+
 
 def bidirSync():
 
@@ -524,105 +651,7 @@ def bidirSync():
 
     # ***** first_sync generate path1 and path2 file lists, and copy any unique path2 files to path1 ***** 
     if first_sync:
-        logging.info(">>>>> --first-sync copying any unique Path2 files to Path1")
-
-        if path1_incremental:
-            path1_lsl_token_new = path1_lsl_token + '_NEW'
-            token_fp=open(path1_lsl_token_new,"wt")
-            token_fp.write(gdrive_changes_now(path1_base)+"\n")
-            token_fp.close()
-
-        path1_lsl_file_new = path1_lsl_file + '_NEW'
-        status, path1_now = get_and_load_lsl("current Path1", path1_lsl_file_new, path1_base)
-        if status:  return status
-
-        path2_lsl_file_new = path2_lsl_file + '_NEW'
-        status, path2_now = get_and_load_lsl("current Path2", path2_lsl_file_new, path2_base)
-        if status:  return status
-
-        files_first_sync_copy_P2P1 = []
-        for key in path2_now:
-            if key not in path1_now or (not key.endswith("/") and path1_now[key]['datetime'] < path2_now[key]['datetime']):
-                logging.info(print_msg("Path2", "  --first-sync queue copy to Path1", key))
-                files_first_sync_copy_P2P1.append(key)
-
-        files_first_sync_copy_P2P1_filename = lsl_file_base + "_files_first_sync_copy_P2P1"
-        path1_now_updated = {}
-        path2_now_updated = {}
-        status, path1_changes,path2_now_updated,path1_now_updated=do_copies(path2_base,path1_base,files_first_sync_copy_P2P1,path2_now_updated,path1_now_updated,path2_now,files_first_sync_copy_P2P1_filename,switches)
-        if status == 1:
-            return path1_changes # error code
-        # path1_changes,path2_now_updated,path1_now_updated are currently unused
-#        if len(files_first_sync_copy_P2P1) > 0:
-#            files_first_sync_copy_P2P1_filename = lsl_file_base + "_files_first_sync_copy_P2P1"
-#            with io.open(files_first_sync_copy_P2P1_filename, mode='wt', encoding='utf8') as outf:
-#                for item in files_first_sync_copy_P2P1:
-#                    if not item.endswith("/"):
-#                        outf.write(item + "\n")
-#            logging.info(print_msg("Path2", "  Do queued first-sync copies to", "Path1"))
-#            if rclone_cmd('copy', path2_base, path1_base, files_file=files_first_sync_copy_P2P1_filename, options=switches+["--create-empty-src-dirs"]):
-#                return RTN_CRITICAL
-#            with io.open(files_first_sync_copy_P2P1_filename, mode='wt', encoding='utf8') as outf:
-#                for item in files_first_sync_copy_P2P1:
-#                    if item.endswith("/"):
-#                        outf.write("+ "+ item + "\n")
-#                    outf.write("- **\n")
-#                logging.info(print_msg("Path2", "  Do queued dir copies to ", "Path1"))
-#                if rclone_cmd('copy', path2_base, path1_base, filter_file=files_first_sync_copy_P2P1_filename, options=switches+["--create-empty-src-dirs"]):
-#                    return RTN_CRITICAL
-            if not args.no_cleanup:
-                os.remove(files_first_sync_copy_P2P1_filename)
-
-        
-        logging.info(">>>>> --first-sync synching Path1 to Path2")
-        # NOTE:  --min-size 0 added to block attempting to overwrite Google Doc files which have size -1 on Google Drive.  180729
-        if rclone_cmd('sync', path1_base, path2_base, filter_file=user_filter_file, options=switches+["--create-empty-src-dirs"] + ['--min-size', '0']):
-            return RTN_CRITICAL
-
-        if 1==0 and skip_refresh:
-            # skip_refresh currently disabled
-            # Copying over _NEW is WRONG. Suppose Path2 is initially empty and we copy over many files from Path1.
-            # Copying over _NEW of Path2 will cause the final lsl file to be empty, instead of listing all the
-            # files that have been copied to Path2!
-            # One option is to leverage the same code that is used in the (not first_sync) branch,
-            # however that won't work if some files have been skipped due to errors.
-            # Given that first-sync may entail large and long transfers, such errors are possible,
-            # and so I think it's much safer to just do a full refresh.
-            logging.info(">>>>> --first-sync skipping refreshing lsl files")
-            shutil.copy2(path1_lsl_file_new, path1_lsl_file)
-            shutil.copy2(path2_lsl_file_new, path2_lsl_file)
-        else:
-            logging.info(">>>>> --first-sync refreshing lsl files")
-#            if rclone_lsl(path1_base, path1_lsl_file, filter_file=user_filter_file):
-            if dump_path_listing(path1_base, path1_lsl_file, filter_file=user_filter_file):
-                return RTN_CRITICAL
-            # Because create_id_list() calls dump_path_listing(), we replace the next two lines
-            # with code that leverages the result of the previous call to dump_path_listing().
-            #status=create_id_list(path1_base, path1_lsl_file)
-            #if status!=0:  return status
-            status, cached_data = load_list(path1_lsl_file, user_filter_file)
-            if status:
-                logging.error(print_msg("ERROR", f"Failed loading current Path1 list file <{path1_lsl_file}>"))
-                return RTN_CRITICAL
-            status, _ = create_id_list_from_cached_data(path1_base, cached_data, path1_lsl_file)
-            if status==False:  return RTN_CRITICAL
-
-#            if rclone_lsl(path2_base, path2_lsl_file, filter_file=user_filter_file):
-            if dump_path_listing(path2_base, path2_lsl_file, user_filter_file):
-                return RTN_CRITICAL
-
-        # success. We can finalize the change token
-        if path1_incremental:
-            shutil.copy2(path1_lsl_token_new, path1_lsl_token)
-
-        if not args.no_cleanup:
-            os.remove(path1_lsl_file_new)
-            os.remove(path2_lsl_file_new)
-            if path1_incremental:
-                os.remove(path1_lsl_token_new)
-
-        return 0
-    
+        return do_first_sync(path1_base,path1_incremental,path2_base,switches,user_filter_file)
 
     # ***** Check for existence of prior Path1 and Path2 lsl files *****
     if (not os.path.exists(path1_lsl_file) or not os.path.exists(path2_lsl_file)):
@@ -641,29 +670,11 @@ def bidirSync():
 
     logging.info("[MB] PROBLEM: ASSUMPTION: PATH1 IS THE REMOTE GOOGLE DRIVE. PATH2 IS THE LOCAL PATH") # TODO
 
-
-    path1_prior = None
-    path1_prior_count = None
-    path1_may_have_changed=True
     path1_lsl_file_new = path1_lsl_file + '_NEW'
-    if path1_incremental:
-        status, path1_now, path1_prior, path1_may_have_changed, change_token = incremental_get_and_load_lsl("current Path1", change_token, path1_lsl_file, path1_lsl_file_new, path1_base)
-        if status:
-            logging.debug("**************incremental_get_and_load_lsl() returned an error")
-        else:
-            logging.debug("**************SAME!!") if path1_now == path1_prior else logging.debug("***************DIFF!!!")
-            logging.debug("**************path1_may_have_changed="+str(path1_may_have_changed))
-    else:
-        status, path1_now = get_and_load_lsl("current Path1", path1_lsl_file_new, path1_base)
+
+    status, path1_now, path1_prior, path1_may_have_changed, change_token=fetch_path1_lsl(path1_base,path1_incremental,path1_lsl_file,path1_lsl_file_new)
     if status:  return status
 
-
-    def get_check_files (loaded_lsl):
-        check_files = {}
-        for key in loaded_lsl:
-            if args.check_filename in key and "rclonesync/Test/" not in key:
-                check_files[key] = loaded_lsl[key]
-        return check_files
 
     if check_access and path1_may_have_changed:
         path1_check = get_check_files(path1_now)
