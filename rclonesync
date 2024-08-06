@@ -2270,9 +2270,10 @@ def get_and_load_lsl(path_text, lsl_file, path12=None):
     if status:
         logging.error(print_msg("ERROR", f"Failed loading {path_text} list file <{lsl_file}>"))
         return RTN_ABORT, None
-    if not first_sync and len(loaded_list) == 0:
-        logging.error(print_msg("ERROR", f"Zero length in {path_text} list file <{lsl_file}>.  Cannot sync to an empty directory tree."))
-        return RTN_CRITICAL, None
+# Removed -- program aborts if one removes all files and folders
+#    if not first_sync and len(loaded_list) == 0:
+#        logging.error(print_msg("ERROR", f"Zero length in {path_text} list file <{lsl_file}>.  Cannot sync to an empty directory tree."))
+#        return RTN_CRITICAL, None
     return 0, loaded_list
 
 def incremental_get_and_load_lsl(path_text, change_token, lsl_file_cached, lsl_file, path12=None):
@@ -2301,9 +2302,10 @@ def incremental_get_and_load_lsl(path_text, change_token, lsl_file_cached, lsl_f
                 logging.error(print_msg("ERROR", f"Failed loading {path_text} list file <{lsl_file}>"))
                 return RTN_ABORT, None, None, False, change_token
             (_,loaded_list)=merge_id_list(loaded_list,lsl_file)
-        if not first_sync and len(loaded_list) == 0:
-            logging.error(print_msg("ERROR", f"Zero length in {path_text} list file <{lsl_file}>.  Cannot sync to an empty directory tree."))
-            return RTN_CRITICAL, None, None, False, change_token
+# Removed -- program aborts if one removes all files and folders
+#        if not first_sync and len(loaded_list) == 0:
+#            logging.error(print_msg("ERROR", f"Zero length in {path_text} list file <{lsl_file}>.  Cannot sync to an empty directory tree."))
+#            return RTN_CRITICAL, None, None, False, change_token
     return 0, loaded_list, cached_data, changes_detected, change_token
 
 def request_lock(caller, lock_file):
