@@ -1562,16 +1562,24 @@ def getPath(service, f):
                         break
                     path.append({'id': parent[0], 'name': folder.get('name')})
                     ID_cache[old_id]=(folder.get('name'),parent)
+        except HttpError as e:
+            logging.error("getPath(): HTTPERROR!!!")
+            logging.error("getPath(): the file info was: "+str(f))
+            logging.info("message:  <{}>".format(e))
+            if e.resp.status == 404 and any(error.get('reason') == 'notFound' for error in json.loads(e.content).get('error', {}).get('errors', [])):
+                logging.info("Detected HttpError 404 - 'notFound'")
+            return([None,True]) # whether to continue with other files or not
         except Exception as e:
             logging.error("getPath(): some kind of network error occurred")
             logging.error("getPath(): the file info was: "+str(f))
             logging.info("message:  <{}>".format(e))
-            return(None)
+            return([None,False]) # whether to continue with other files or not
     path.reverse()
     return(path)
 
 def pathToStr(p):
     if p==None: return(None)
+    if len(p)==2 and p[0]==None: return(p)
     return("/".join([ d['name'] for d in list(p)]))
 
 def fetch_file_info(path,info,file_list,is_folders,maxdepth,ofile,filter_file,options):
@@ -1957,6 +1965,11 @@ def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file
         logging.error("HERE2 "+str(file_record)) # DEBUG
         file_path=pathToStr(getPath(service, file_record))
         logging.error("HERE3 "+str(file_path)) # DEBUG
+        if len(file_path)==2 and file_path[0]==None:
+            if file_path[1]==True:
+                continue
+            else:
+                file_path=None # for compatibility with older code
 
         # Find prior pathname for file id
         prior_path=None
