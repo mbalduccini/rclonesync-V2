@@ -491,6 +491,9 @@ def bidirSync():
     if args.no_datetime_log:
         switches.extend(['--log-format', '""'])
 
+    # skip Google Docs files
+    switches.append("--drive-skip-gdocs")
+
 
     # ***** Handle user_filter_file, if provided *****
     if user_filter_file is not None:
