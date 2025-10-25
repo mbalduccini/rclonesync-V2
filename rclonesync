@@ -35,6 +35,7 @@ import collections                                  # For dictionary sorting.
 import hashlib                                      # For checking if the filter file changed and force --first_sync.
 import signal                                       # For keyboard interrupt handler
 import random
+from collections import defaultdict
 
 # pip install google-api-python-client
 # pip install google_auth_oauthlib
@@ -1851,6 +1852,24 @@ def move_contained_objects(file_path,file_is_folder,moved_file,remote_root,path_
 
     return new_data
 
+def _escape_for_q(s: str) -> str:
+    return s.replace("'", "\\'")
+
+def file_exists(service, folder_id: str, name: str, include_all_drives: bool = True) -> bool:
+    q = (
+        f"'{folder_id}' in parents and "
+        f"name = '{_escape_for_q(name)}' and "
+        f"trashed = false"
+    )
+    resp = service.files().list(
+        q=q,
+        fields="files(id)",
+        pageSize=1,
+        includeItemsFromAllDrives=include_all_drives,
+        supportsAllDrives=include_all_drives,
+    ).execute()
+    return bool(resp.get("files"))
+
 def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file=None, options=None):
     """
     Fetch an rclone LSL of the path and write it to ofile.
@@ -1874,6 +1893,7 @@ def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file
     #changed=[]
     changed_dict={}
     page_token=token
+    pathname_candidates = []   # [(fileId, parent_id, name, removed_bool)]
     try:
         while page_token is not None:
             # TODO I had a case in which a Windows user put a slash in the GDrive filename. The character was encoded as "／". However, the changes() API automatically returns it as "/". As a result, "rclone lsl" + filters is unable to find the file, because rclone somehow does not do that conversion
@@ -1904,6 +1924,11 @@ def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file
 #                        changed.append([change.get('fileId'),name,"remove" if removed else "modify", f, (mime=="application/vnd.google-apps.folder") ])
                         logging.error("RRR removed="+str(removed))
                         changed_dict[change.get('fileId')]=[change.get('fileId'),name,"remove" if removed else "modify", f, (mime=="application/vnd.google-apps.folder") ]
+
+                        # collect candidates for post-pass when we have a parent
+                        parent_id = f['parents'][0] if f.get('parents') else None
+                        if parent_id is not None and name:
+                            pathname_candidates.append((change.get('fileId'), parent_id, name, bool(removed)))
                 else:
                     logging.info("PROBLEM: file "+change.get('fileId')+" does not have file info. Probably it was removed. I should really have a database of fileIds and their former names, so I can delete it locally. Ignoring it for now") # TODO
     
@@ -1919,6 +1944,45 @@ def merge_gdrive_changes_python(token, path, lsl_file_cached, ofile, filter_file
         return 1, orig_token, False, None, None
 
     token=saved_start_page_token
+
+
+    # >>>>>>> Handle deletions when multiple file IDs map to the same pathname
+    # ---- Post-process across the entire feed ----
+    groups = defaultdict(list)  # (parent_id, name) -> list of (fileId, removed_bool)
+    for fid, pid, nm, rem in pathname_candidates:
+        groups[(pid, nm)].append((fid, rem))
+
+    # If your loop used restrictToMyDrive=True, then include_all_drives=False here.
+    include_all_drives = False
+
+    for (pid, nm), entries in groups.items():
+        any_live = any(not rem for _, rem in entries)
+        if any_live:
+            # Rule (1): if any live remains, drop trashed/removed records for that pathname
+            for fid, rem in entries:
+                if rem and fid in changed_dict:
+                    logging.debug(
+                        f"Drop removed (live twin exists): name='{nm}' parent={pid} id={fid}"
+                    )
+                    changed_dict.pop(fid, None)
+        else:
+            # Rule (2): all entries were trashed/removed → check live Drive FS once
+            try:
+                still_exists = file_exists(service, pid, nm, include_all_drives=include_all_drives)
+            except Exception as e:
+                logging.warning(
+                    f"Existence check failed for name='{nm}' parent={pid}: {e}"
+                )
+                still_exists = False
+
+            if still_exists:
+                for fid, _ in entries:
+                    if fid in changed_dict:
+                        logging.debug(
+                            f"Drop removed (live path seen in Drive): name='{nm}' parent={pid} id={fid}"
+                        )
+                        changed_dict.pop(fid, None)
+    # <<<<<<<
 
     changed=changed_dict.values()
     if len(changed)==0:
