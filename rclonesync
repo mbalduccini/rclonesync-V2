@@ -1378,7 +1378,9 @@ def gdrive_changes_now_python(path):
         return("")
 
     response = service.changes().getStartPageToken().execute()
-    return(response.get('startPageToken'))
+    token = response.get('startPageToken')
+    logging.info(f"Starting Google Drive startPageToken: {token}")
+    return token
 
 def gdrive_changes_now(path):
     return(gdrive_changes_now_python(path))
